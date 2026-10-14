@@ -166,21 +166,28 @@ tar -xzf raylib-wasi.tar.gz
 
 ### Option 2: Install via npm (for Web IDEs & Web Apps)
 
-You can install `raylib-wasi` directly from GitHub into any Node.js / web project (like `wasm-c-ide`):
+You can install `@breeze833/raylib-wasi` into any Node.js / web project (like `wasm-c-ide`):
 
+**From GitHub repository directly**:
 ```bash
 npm install https://github.com/breeze833/raylib-wasi
 ```
+*(An automatic zero-dependency `postinstall` script downloads the precompiled `libraylib.a` and headers from GitHub Releases, requiring no local C compiler or Clang toolchain).*
 
-Then import the host runtime bridge directly in your code:
-
-```javascript
-import { createRaylibHost } from 'raylib-wasi';
+**Or from GitHub Packages**:
+```bash
+npm install @breeze833/raylib-wasi
 ```
 
-And access headers and static library at:
-- Header files: `node_modules/raylib-wasi/dist/include/`
-- Static archive: `node_modules/raylib-wasi/dist/lib/libraylib.a`
+Then import the host runtime bridge directly in your JavaScript / TypeScript code:
+
+```javascript
+import { createRaylibHost } from '@breeze833/raylib-wasi';
+```
+
+And access the precompiled headers and static library for Wasm compilation at:
+- Header files: `node_modules/@breeze833/raylib-wasi/dist/include/`
+- Static archive: `node_modules/@breeze833/raylib-wasi/dist/lib/libraylib.a`
 
 ### Option 3: Git Submodule (Source Integration)
 

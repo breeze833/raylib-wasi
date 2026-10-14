@@ -1,0 +1,13 @@
+# .npmignore - Defines what is excluded from the published npm package tarball
+build/
+vendor/
+examples/
+test/
+src/
+Makefile
+router.php
+.github/
+scratch/
+*.wasm
+dist/*.tar.gz
+dist/*.zip
