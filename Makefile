@@ -33,9 +33,18 @@ PLATFORM_OBJS = $(BUILD_DIR)/rcore_wasi.o \
 
 ALL_OBJS = $(RAYLIB_OBJS) $(PLATFORM_OBJS)
 
-.PHONY: all clean headers host test
+EXAMPLES = examples/core_basic_window.wasm \
+           examples/shapes_basic_shapes.wasm \
+           examples/core_input_keys.wasm
+
+.PHONY: all clean headers host test examples
 
 all: $(DIST_LIB)/libraylib.a headers host
+
+examples: all $(EXAMPLES)
+
+examples/%.wasm: examples/%.c $(DIST_LIB)/libraylib.a
+	$(CC) --target=$(TARGET) -nodefaultlibs -lc -I$(DIST_INC) $< $(DIST_LIB)/libraylib.a -o $@
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -70,6 +79,7 @@ host:
 
 test: all
 	$(NODE) --test test/host.test.js
+	$(NODE) --test test/symbols.test.js
 
 clean:
-	rm -rf $(BUILD_DIR) $(DIST_DIR)/lib $(DIST_DIR)/include
+	rm -rf $(BUILD_DIR) $(DIST_DIR)/lib $(DIST_DIR)/include $(EXAMPLES)
