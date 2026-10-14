@@ -1,5 +1,7 @@
 build/
 *.wasm
+dist/lib/
+dist/include/
 dist/*.tar.gz
 dist/*.zip
 .DS_Store
