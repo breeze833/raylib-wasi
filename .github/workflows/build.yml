@@ -91,10 +91,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish to GitHub Packages
+      - name: Publish Latest Package to GitHub Packages (Push to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          # Generate rolling development version: e.g. 5.5.0-dev.<run_number>
+          node -e "
+            import fs from 'node:fs';
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const baseVer = pkg.version.split('-')[0];
+            pkg.version = \`\${baseVer}-dev.\${process.env.GITHUB_RUN_NUMBER}\`;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log('Publishing rolling pre-release package version:', pkg.version);
+          "
+          npm publish --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+      - name: Publish Versioned Package to GitHub Packages (Git Tag)
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
-          npm publish
+          npm publish --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

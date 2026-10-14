@@ -175,6 +175,11 @@ npm install https://github.com/breeze833/raylib-wasi
 *(An automatic zero-dependency `postinstall` script downloads the precompiled `libraylib.a` and headers from GitHub Releases, requiring no local C compiler or Clang toolchain).*
 
 **Or from GitHub Packages**:
+Add to your `.npmrc` (or `~/.npmrc`):
+```ini
+@breeze833:registry=https://npm.pkg.github.com
+```
+Then run:
 ```bash
 npm install @breeze833/raylib-wasi
 ```
