@@ -138,14 +138,69 @@ Generates `dist/raylib-wasi.tar.gz` and `dist/raylib-wasi.zip`.
 
 ---
 
+## 📦 Downloading & Integrating raylib-wasi into Your Project
+
+### Option 1: Download Precompiled Release Bundle
+
+Precompiled archives containing `include/`, `lib/libraylib.a`, and `raylib-host.js` are published on GitHub Releases:
+
+- 👉 **[GitHub Releases Page](https://github.com/breeze833/raylib-wasi/releases)**
+
+To download and extract the latest build directly in your terminal:
+
+```bash
+# Download and extract the latest tarball
+curl -LO https://github.com/breeze833/raylib-wasi/releases/download/latest/raylib-wasi.tar.gz
+tar -xzf raylib-wasi.tar.gz
+
+# Archive contents:
+# ├── include/
+# │   ├── raylib.h
+# │   ├── raymath.h
+# │   └── rlgl.h
+# ├── lib/
+# │   └── libraylib.a
+# ├── raylib-host.js
+# └── raylib-host.d.ts
+```
+
+### Option 2: Install via npm (for Web IDEs & Web Apps)
+
+You can install `raylib-wasi` directly from GitHub into any Node.js / web project (like `wasm-c-ide`):
+
+```bash
+npm install https://github.com/breeze833/raylib-wasi
+```
+
+Then import the host runtime bridge directly in your code:
+
+```javascript
+import { createRaylibHost } from 'raylib-wasi';
+```
+
+And access headers and static library at:
+- Header files: `node_modules/raylib-wasi/dist/include/`
+- Static archive: `node_modules/raylib-wasi/dist/lib/libraylib.a`
+
+### Option 3: Git Submodule (Source Integration)
+
+If you prefer building from source in your repository:
+
+```bash
+git submodule add https://github.com/breeze833/raylib-wasi vendor/raylib-wasi
+cd vendor/raylib-wasi && make all
+```
+
+---
+
 ## 💻 Compiling Your Own Game with raylib-wasi
 
 To compile any Raylib C code into a `wasm32-wasi` binary:
 
 ```bash
 clang --target=wasm32-wasi -nodefaultlibs -lc \
-  -Idist/include \
-  main.c dist/lib/libraylib.a \
+  -Iinclude \
+  main.c lib/libraylib.a \
   -o game.wasm
 ```
 

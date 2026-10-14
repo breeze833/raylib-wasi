@@ -1,0 +1,43 @@
+{
+  "name": "raylib-wasi",
+  "version": "5.5.0",
+  "description": "Standalone Raylib 5.5 port and host runtime bridge for WebAssembly (wasm32-wasi) without Emscripten",
+  "type": "module",
+  "main": "./dist/raylib-host.js",
+  "module": "./dist/raylib-host.js",
+  "types": "./dist/raylib-host.d.ts",
+  "exports": {
+    ".": "./dist/raylib-host.js",
+    "./host": "./dist/raylib-host.js",
+    "./include/*": "./dist/include/*",
+    "./lib/*": "./dist/lib/*"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "make all",
+    "test": "node --test test/*.js",
+    "package": "make package"
+  },
+  "keywords": [
+    "raylib",
+    "wasi",
+    "webassembly",
+    "wasm",
+    "webgl",
+    "gamedev"
+  ],
+  "author": "breeze833",
+  "license": "Zlib",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/breeze833/raylib-wasi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/breeze833/raylib-wasi/issues"
+  },
+  "homepage": "https://github.com/breeze833/raylib-wasi#readme"
+}

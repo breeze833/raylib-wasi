@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -46,16 +49,43 @@ jobs:
             dist/raylib-wasi.tar.gz
             dist/raylib-wasi.zip
             dist/raylib-host.js
+            dist/raylib-host.d.ts
             dist/include/
             dist/lib/
 
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish Latest Pre-release (Push to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: latest
+          name: "raylib-wasi latest (rolling build)"
+          body: |
+            Automated continuous build from the latest commit on `main`.
+
+            ### 📦 Downloadable Assets:
+            - **`raylib-wasi.tar.gz`**: Precompiled distribution archive (`include/`, `lib/libraylib.a`, and `raylib-host.js`)
+            - **`raylib-wasi.zip`**: ZIP archive of the distribution bundle
+            - **`raylib-host.js`**: Standalone vanilla ES module host runtime bridge
+            - **`raylib-host.d.ts`**: TypeScript definitions
+          prerelease: true
           files: |
             dist/raylib-wasi.tar.gz
             dist/raylib-wasi.zip
             dist/raylib-host.js
+            dist/raylib-host.d.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Versioned Release (Git Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "raylib-wasi ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            dist/raylib-wasi.tar.gz
+            dist/raylib-wasi.zip
+            dist/raylib-host.js
+            dist/raylib-host.d.ts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

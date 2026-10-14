@@ -1,7 +1,10 @@
 // serve.js - Zero-dependency dev server with Cross-Origin Isolation (COOP/COEP)
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const ROOT = path.resolve(__dirname, '..');
