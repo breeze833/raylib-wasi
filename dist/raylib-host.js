@@ -692,7 +692,7 @@ class InputCoordinator {
       this.syncWord = new Int32Array(this.sharedBuffer, 372, 1);
     }
 
-    if (this.canvas) {
+    if (this.canvas && typeof this.canvas.addEventListener === 'function') {
       this.attachListeners(this.canvas);
     }
   }
@@ -1020,15 +1020,22 @@ function createRaylibHost(options = {}) {
   // Initialize Canvas & WebGL Context
   let canvas = options.canvas || null;
   let gl = options.gl || null;
-  if (!gl && canvas) {
-    gl = canvas.getContext('webgl', {
-      alpha: false,
-      depth: true,
-      stencil: true,
-      antialias: true,
-      premultipliedAlpha: false,
-      preserveDrawingBuffer: false
-    });
+  if (!gl) {
+    if (!canvas && typeof OffscreenCanvas !== 'undefined') {
+      const w = options.width || 800;
+      const h = options.height || 450;
+      canvas = new OffscreenCanvas(w, h);
+    }
+    if (canvas && typeof canvas.getContext === 'function') {
+      gl = canvas.getContext('webgl', {
+        alpha: false,
+        depth: true,
+        stencil: true,
+        antialias: true,
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: false
+      });
+    }
   }
 
   // Create sub-modules
@@ -1068,8 +1075,22 @@ function createRaylibHost(options = {}) {
     },
 
     raylib_host_swap_buffers: () => {
-      if (options.onFrame) options.onFrame();
-      // OffscreenCanvas in worker commit if available
+      let bitmap = null;
+      if (canvas && typeof canvas.transferToImageBitmap === 'function') {
+        try {
+          bitmap = canvas.transferToImageBitmap();
+        } catch (_) {
+          // Ignore if placeholder canvas or detached
+        }
+      }
+
+      if (options.onFrame) {
+        options.onFrame(bitmap);
+      } else if (bitmap && typeof self !== 'undefined' && typeof self.postMessage === 'function') {
+        self.postMessage({ type: 'frame', bitmap }, [bitmap]);
+      }
+
+      // Legacy OffscreenCanvas commit if available
       if (gl && gl.commit) gl.commit();
     },
 

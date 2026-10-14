@@ -151,18 +151,27 @@
       oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
       newCanvas.focus();
 
-      if (hasSAB && typeof newCanvas.transferControlToOffscreen === 'function') {
-        // Run in Web Worker with SharedArrayBuffer
-        const offscreen = newCanvas.transferControlToOffscreen();
+      if (hasSAB) {
+        // Run in Web Worker with SharedArrayBuffer and zero-copy ImageBitmap presentation
+        const ctx = newCanvas.getContext('bitmaprenderer');
         const sharedBuffer = new SharedArrayBuffer(512);
 
         activeWorker = new Worker('worker.js', { type: 'module' });
         activeWorker.onmessage = (e) => {
           const data = e.data;
-          if (data.type === 'log') log(data.text);
-          if (data.type === 'err') log(data.text, '#f38ba8');
-          if (data.type === 'fps') fpsElem.textContent = data.fps;
-          if (data.type === 'status') log(`Status: ${data.status}`, '#a6e3a1');
+          if (data.type === 'frame') {
+            ctx.transferFromImageBitmap(data.bitmap);
+          } else if (data.type === 'log') {
+            log(data.text);
+          } else if (data.type === 'err') {
+            log(data.text, '#f38ba8');
+          } else if (data.type === 'fps') {
+            fpsElem.textContent = data.fps;
+          } else if (data.type === 'status') {
+            log(`Status: ${data.status}`, '#a6e3a1');
+          } else if (data.type === 'error') {
+            log(`Error: ${data.error}`, '#f38ba8');
+          }
         };
 
         // Forward DOM input to SharedArrayBuffer
@@ -171,11 +180,10 @@
 
         activeWorker.postMessage({
           wasmUrl: wasmFile,
-          canvas: offscreen,
           sharedBuffer,
           width: 800,
           height: 450
-        }, [offscreen]);
+        });
       } else {
         log('⚠️ Cross-Origin Isolation (COOP/COEP) is NOT active.', '#fab387');
         log('Browsers require COOP/COEP headers to enable SharedArrayBuffer and Web Worker 60 FPS pacing.');

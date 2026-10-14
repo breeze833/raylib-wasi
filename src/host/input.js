@@ -58,7 +58,7 @@ export class InputCoordinator {
       this.syncWord = new Int32Array(this.sharedBuffer, 372, 1);
     }
 
-    if (this.canvas) {
+    if (this.canvas && typeof this.canvas.addEventListener === 'function') {
       this.attachListeners(this.canvas);
     }
   }

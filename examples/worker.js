@@ -2,14 +2,17 @@
 import { createRaylibHost } from '../dist/raylib-host.js';
 
 self.onmessage = async (e) => {
-  const { wasmUrl, canvas, sharedBuffer, width, height } = e.data;
+  const { wasmUrl, sharedBuffer, width = 800, height = 450 } = e.data;
 
+  // Use worker-owned OffscreenCanvas (allows synchronous transferToImageBitmap)
+  const canvas = e.data.canvas || new OffscreenCanvas(width, height);
   const gl = canvas.getContext('webgl', {
     alpha: false,
     depth: true,
     stencil: true,
     antialias: true,
-    premultipliedAlpha: false
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: false
   });
 
   let fps = 0;
@@ -24,7 +27,10 @@ self.onmessage = async (e) => {
     height,
     print: (text) => self.postMessage({ type: 'log', text }),
     printErr: (text) => self.postMessage({ type: 'err', text }),
-    onFrame: () => {
+    onFrame: (bitmap) => {
+      if (bitmap) {
+        self.postMessage({ type: 'frame', bitmap }, [bitmap]);
+      }
       frames++;
       const now = performance.now();
       if (now - lastTime >= 1000) {

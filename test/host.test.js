@@ -177,3 +177,30 @@ test('createRaylibHost and WASI snapshot preview1', () => {
   }
   assert.strictEqual(exitedCode, 0);
 });
+
+test('raylib_host_swap_buffers captures ImageBitmap from OffscreenCanvas and dispatches onFrame', () => {
+  const fakeBitmap = { width: 800, height: 450, close: () => {} };
+  let bitmapTransferred = false;
+  const mockCanvas = {
+    width: 800,
+    height: 450,
+    transferToImageBitmap: () => {
+      bitmapTransferred = true;
+      return fakeBitmap;
+    }
+  };
+
+  let frameReceived = null;
+  const host = createRaylibHost({
+    canvas: mockCanvas,
+    onFrame: (bitmap) => {
+      frameReceived = bitmap;
+    }
+  });
+
+  const imports = host.getImports();
+  imports.raylib.raylib_host_swap_buffers();
+
+  assert.strictEqual(bitmapTransferred, true);
+  assert.strictEqual(frameReceived, fakeBitmap);
+});
