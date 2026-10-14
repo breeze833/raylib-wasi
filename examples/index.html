@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>raylib-wasi Interactive Harness</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #181825;
+      color: #cdd6f4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { margin-top: 0; color: #89b4fa; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 16px;
+    }
+    .badge-ok { background: #a6e3a1; color: #11111b; }
+    .badge-warn { background: #fab387; color: #11111b; }
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    #canvas-wrapper {
+      border: 2px solid #45475a;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      background: #000;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      outline: none;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    select, button {
+      background: #313244;
+      color: #cdd6f4;
+      border: 1px solid #45475a;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover, select:hover {
+      background: #45475a;
+    }
+    #fps {
+      font-weight: bold;
+      color: #a6e3a1;
+      font-family: monospace;
+      font-size: 16px;
+    }
+    #terminal {
+      width: 800px;
+      height: 160px;
+      background: #11111b;
+      border: 1px solid #313244;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 13px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: #a6adc8;
+    }
+  </style>
+</head>
+<body>
+  <h1>raylib-wasi Browser Harness</h1>
+  <div id="isolation-badge" class="badge">Checking environment...</div>
+
+  <div id="container">
+    <div class="controls">
+      <label for="example-select">Example:</label>
+      <select id="example-select">
+        <option value="core_basic_window.wasm">core_basic_window.wasm</option>
+        <option value="shapes_basic_shapes.wasm">shapes_basic_shapes.wasm</option>
+        <option value="core_input_keys.wasm">core_input_keys.wasm</option>
+      </select>
+      <button id="start-btn">Start / Restart</button>
+      <span>FPS: <span id="fps">--</span></span>
+    </div>
+
+    <div id="canvas-wrapper">
+      <canvas id="raylib-canvas" width="800" height="450" tabindex="1"></canvas>
+    </div>
+
+    <div id="terminal"></div>
+  </div>
+
+  <script type="module">
+    import { createRaylibHost } from '../dist/raylib-host.js';
+
+    const canvas = document.getElementById('raylib-canvas');
+    const startBtn = document.getElementById('start-btn');
+    const exampleSelect = document.getElementById('example-select');
+    const terminal = document.getElementById('terminal');
+    const fpsElem = document.getElementById('fps');
+    const badge = document.getElementById('isolation-badge');
+
+    function log(msg, color = '#cdd6f4') {
+      const line = document.createElement('div');
+      line.style.color = color;
+      line.textContent = msg;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    const hasSAB = typeof SharedArrayBuffer !== 'undefined' && window.crossOriginIsolated;
+    if (hasSAB) {
+      badge.textContent = 'Web Worker Mode (SharedArrayBuffer + Atomics.wait 60 FPS frame pacing)';
+      badge.className = 'badge badge-ok';
+    } else {
+      badge.textContent = 'Fallback Mode (Single-Threaded / Non-isolated)';
+      badge.className = 'badge badge-warn';
+    }
+
+    let activeWorker = null;
+    let activeHost = null;
+
+    async function launch() {
+      if (activeWorker) {
+        activeWorker.terminate();
+        activeWorker = null;
+      }
+
+      terminal.innerHTML = '';
+      fpsElem.textContent = '--';
+      const wasmFile = exampleSelect.value;
+      log(`Loading ${wasmFile}...`, '#89b4fa');
+
+      if (hasSAB && typeof canvas.transferControlToOffscreen === 'function' && !canvas._transferred) {
+        // Run in Web Worker
+        const offscreen = canvas.transferControlToOffscreen();
+        canvas._transferred = true;
+        const sharedBuffer = new SharedArrayBuffer(512);
+
+        activeWorker = new Worker('worker.js', { type: 'module' });
+        activeWorker.onmessage = (e) => {
+          const data = e.data;
+          if (data.type === 'log') log(data.text);
+          if (data.type === 'err') log(data.text, '#f38ba8');
+          if (data.type === 'fps') fpsElem.textContent = data.fps;
+          if (data.type === 'status') log(`Status: ${data.status}`, '#a6e3a1');
+        };
+
+        // Forward DOM input to SharedArrayBuffer
+        const hostInputSync = createRaylibHost({ sharedBuffer, width: 800, height: 450 });
+        hostInputSync.input.attachListeners(canvas);
+
+        activeWorker.postMessage({
+          wasmUrl: wasmFile,
+          canvas: offscreen,
+          sharedBuffer,
+          width: 800,
+          height: 450
+        }, [offscreen]);
+      } else {
+        // Fallback execution
+        const gl = canvas.getContext('webgl');
+        activeHost = createRaylibHost({
+          canvas,
+          gl,
+          width: 800,
+          height: 450,
+          print: (t) => log(t),
+          printErr: (t) => log(t, '#f38ba8')
+        });
+
+        const res = await fetch(wasmFile);
+        const bytes = await res.arrayBuffer();
+        log('Starting application...', '#a6e3a1');
+        activeHost.run(bytes).catch(err => {
+          if (err.exitCode !== 0) log(`Error: ${err.message}`, '#f38ba8');
+        });
+      }
+    }
+
+    startBtn.addEventListener('click', launch);
+    window.addEventListener('load', launch);
+  </script>
+</body>
+</html>

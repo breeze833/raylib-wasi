@@ -299,7 +299,8 @@ void PollInputEvents(void)
     }
 }
 
-// Active WaitTime implementation (replacing Raylib_Internal_WaitTime)
+// Active WaitTime implementation (rcore.c compiled with -DWaitTime=Raylib_Internal_WaitTime)
+#undef WaitTime
 void WaitTime(double seconds)
 {
     if (seconds <= 0.0) return;
