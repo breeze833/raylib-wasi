@@ -37,9 +37,12 @@ EXAMPLES = examples/core_basic_window.wasm \
            examples/shapes_basic_shapes.wasm \
            examples/core_input_keys.wasm
 
-.PHONY: all clean headers host test examples
+.PHONY: all clean headers host test examples package serve
 
 all: $(DIST_LIB)/libraylib.a headers host
+
+serve: all
+	$(NODE) scripts/serve.js
 
 examples: all $(EXAMPLES)
 

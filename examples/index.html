@@ -127,7 +127,7 @@
       badge.textContent = 'Web Worker Mode (SharedArrayBuffer + Atomics.wait 60 FPS frame pacing)';
       badge.className = 'badge badge-ok';
     } else {
-      badge.textContent = 'Fallback Mode (Single-Threaded / Non-isolated)';
+      badge.textContent = 'Fallback Mode (Single-Threaded / Non-isolated - Start server with COOP/COEP for Web Worker mode)';
       badge.className = 'badge badge-warn';
     }
 
@@ -145,10 +145,15 @@
       const wasmFile = exampleSelect.value;
       log(`Loading ${wasmFile}...`, '#89b4fa');
 
-      if (hasSAB && typeof canvas.transferControlToOffscreen === 'function' && !canvas._transferred) {
-        // Run in Web Worker
-        const offscreen = canvas.transferControlToOffscreen();
-        canvas._transferred = true;
+      // Recreate canvas element so transferControlToOffscreen() can be called fresh on restarts
+      const oldCanvas = document.getElementById('raylib-canvas');
+      const newCanvas = oldCanvas.cloneNode(true);
+      oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
+      newCanvas.focus();
+
+      if (hasSAB && typeof newCanvas.transferControlToOffscreen === 'function') {
+        // Run in Web Worker with SharedArrayBuffer
+        const offscreen = newCanvas.transferControlToOffscreen();
         const sharedBuffer = new SharedArrayBuffer(512);
 
         activeWorker = new Worker('worker.js', { type: 'module' });
@@ -162,7 +167,7 @@
 
         // Forward DOM input to SharedArrayBuffer
         const hostInputSync = createRaylibHost({ sharedBuffer, width: 800, height: 450 });
-        hostInputSync.input.attachListeners(canvas);
+        hostInputSync.input.attachListeners(newCanvas);
 
         activeWorker.postMessage({
           wasmUrl: wasmFile,
@@ -172,10 +177,16 @@
           height: 450
         }, [offscreen]);
       } else {
-        // Fallback execution
-        const gl = canvas.getContext('webgl');
+        log('⚠️ Cross-Origin Isolation (COOP/COEP) is NOT active.', '#fab387');
+        log('Browsers require COOP/COEP headers to enable SharedArrayBuffer and Web Worker 60 FPS pacing.');
+        log('Start the server using one of the following commands:');
+        log('  > make serve');
+        log('  OR');
+        log('  > php -S 127.0.0.1:8080 router.php\n', '#89b4fa');
+
+        const gl = newCanvas.getContext('webgl');
         activeHost = createRaylibHost({
-          canvas,
+          canvas: newCanvas,
           gl,
           width: 800,
           height: 450,
@@ -193,6 +204,7 @@
     }
 
     startBtn.addEventListener('click', launch);
+    exampleSelect.addEventListener('change', launch);
     window.addEventListener('load', launch);
   </script>
 </body>
