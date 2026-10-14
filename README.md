@@ -151,50 +151,162 @@ clang --target=wasm32-wasi -nodefaultlibs -lc \
 
 ---
 
-## 🌐 Running in the Browser (Web Worker)
+## 🌐 Integrating raylib-wasi in Web Applications & Web IDEs
 
-`raylib-wasi` is designed to run synchronously inside a Web Worker using `raylib-host.js`:
+Because standard Raylib programs run in a continuous synchronous loop (`while (!WindowShouldClose()) { ... }`), running them on the browser's main UI thread will freeze the browser tab. `raylib-wasi` is engineered specifically for execution inside **Web Workers** (such as the terminal emulator worker in `wasm-c-ide`), using `SharedArrayBuffer` for frame pacing (`Atomics.wait`) and input synchronization.
+
+### 🎨 Canvas Update Architecture: Zero-Copy `ImageBitmap` Transfer
+
+> [!IMPORTANT]
+> **Why `transferControlToOffscreen()` cannot be used**:
+> When an `HTMLCanvasElement` is transferred to a worker via `canvas.transferControlToOffscreen()`, the browser only commits rendered frames to the screen during the worker's JavaScript **event loop checkpoint** ("Update the rendering" step). Since Raylib's synchronous C loop never yields the call stack back to the worker event loop, and legacy `gl.commit()` was deprecated and removed from modern browser WebGL standards, placeholder canvases will remain permanently blank.
+>
+> **The Correct Rendering Method**:
+> 1. The **main thread** owns the onscreen `<canvas>` and initializes an `ImageBitmapRenderingContext` (`canvas.getContext('bitmaprenderer')`).
+> 2. The **Web Worker** creates an independent `OffscreenCanvas` (`new OffscreenCanvas(width, height)`).
+> 3. On every frame swap (`raylib_host_swap_buffers`), `raylib-host.js` captures a GPU-backed `ImageBitmap` via `canvas.transferToImageBitmap()`.
+> 4. The worker transfers the bitmap to the main thread via `postMessage({ type: 'frame', bitmap }, [bitmap])` (zero-copy GPU buffer transfer).
+> 5. The main thread immediately renders the bitmap via `ctx.transferFromImageBitmap(bitmap)`.
+
+---
+
+### Step-by-Step Integration
+
+#### 1. Main Thread (`index.html` / `main.js`)
 
 ```javascript
 import { createRaylibHost } from './dist/raylib-host.js';
 
-// Inside worker.js:
-const offscreenCanvas = ...; // Transferred from main thread
-const sharedBuffer = ...;    // SharedArrayBuffer (512 bytes)
+const canvas = document.getElementById('raylib-canvas');
 
-const host = createRaylibHost({
-  canvas: offscreenCanvas,
-  sharedBuffer: sharedBuffer,
+// 1. Initialize high-performance bitmap renderer on DOM canvas
+const ctx = canvas.getContext('bitmaprenderer');
+
+// 2. Allocate 512-byte SharedArrayBuffer for synchronous input and frame pacing
+const sharedBuffer = new SharedArrayBuffer(512);
+
+// 3. Attach DOM keyboard and mouse event listeners to SharedArrayBuffer
+const hostInput = createRaylibHost({
+  sharedBuffer,
   width: 800,
   height: 450
 });
+hostInput.input.attachListeners(canvas);
 
-const wasmResponse = await fetch('game.wasm');
-const wasmBinary = await wasmResponse.arrayBuffer();
+// 4. Spawn Web Worker
+const worker = new Worker('worker.js', { type: 'module' });
 
-// Run the synchronous game loop
-await host.run(wasmBinary);
+// 5. Handle worker messages (render incoming frames and capture logs)
+worker.onmessage = (e) => {
+  const { type, bitmap, text, fps, error } = e.data;
+  if (type === 'frame') {
+    // Zero-copy transfer of rendered GPU frame directly to canvas
+    ctx.transferFromImageBitmap(bitmap);
+  } else if (type === 'fps') {
+    console.log(`Current FPS: ${fps}`);
+  } else if (type === 'log') {
+    console.log(`[Raylib] ${text}`);
+  } else if (type === 'err' || type === 'error') {
+    console.error(`[Raylib Error] ${text || error}`);
+  }
+};
+
+// 6. Start game execution
+worker.postMessage({
+  wasmUrl: 'game.wasm',
+  sharedBuffer,
+  width: 800,
+  height: 450
+});
 ```
 
-On the main UI thread:
+#### 2. Worker Thread (`worker.js`)
+
 ```javascript
 import { createRaylibHost } from './dist/raylib-host.js';
 
-const canvas = document.getElementById('my-canvas');
-const offscreen = canvas.transferControlToOffscreen();
-const sharedBuffer = new SharedArrayBuffer(512);
+self.onmessage = async (e) => {
+  const { wasmUrl, sharedBuffer, width = 800, height = 450 } = e.data;
 
-// Sync input events from DOM to SharedArrayBuffer
-const hostSync = createRaylibHost({ sharedBuffer, width: 800, height: 450 });
-hostSync.input.attachListeners(canvas);
+  // 1. Create worker-owned OffscreenCanvas (NOT transferred from DOM)
+  const canvas = new OffscreenCanvas(width, height);
+  const gl = canvas.getContext('webgl', {
+    alpha: false,
+    depth: true,
+    stencil: true,
+    antialias: true,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: false
+  });
 
-// Launch worker
-const worker = new Worker('worker.js', { type: 'module' });
-worker.postMessage({ canvas: offscreen, sharedBuffer }, [offscreen]);
+  // 2. Initialize host runtime bridge
+  const host = createRaylibHost({
+    canvas,
+    gl,
+    sharedBuffer,
+    width,
+    height,
+    print: (text) => self.postMessage({ type: 'log', text }),
+    printErr: (text) => self.postMessage({ type: 'err', text }),
+    onFrame: (bitmap) => {
+      // Transfer captured GPU ImageBitmap to main thread
+      if (bitmap) {
+        self.postMessage({ type: 'frame', bitmap }, [bitmap]);
+      }
+    },
+    onClose: () => {
+      self.postMessage({ type: 'status', status: 'closed' });
+    }
+  });
+
+  // 3. Fetch and execute the WebAssembly binary
+  try {
+    const response = await fetch(wasmUrl);
+    const wasmBinary = await response.arrayBuffer();
+    self.postMessage({ type: 'status', status: 'running' });
+    
+    // Starts the synchronous game loop (returns when WindowShouldClose() becomes true)
+    await host.run(wasmBinary);
+    
+    self.postMessage({ type: 'status', status: 'finished' });
+  } catch (err) {
+    if (err.exitCode === 0) {
+      self.postMessage({ type: 'status', status: 'exited_0' });
+    } else {
+      self.postMessage({ type: 'error', error: err.message });
+    }
+  }
+};
 ```
+
+---
+
+### 🔒 Required HTTP Security Headers (COOP / COEP)
+
+Browsers enforce cross-origin isolation as a strict security requirement for `SharedArrayBuffer` and `Atomics.wait()`. Your web server must send the following HTTP response headers:
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+#### Local Development Server
+- **Node.js**: Run `make serve` (starts `scripts/serve.js` on port `8080` with COOP/COEP headers).
+- **PHP**: Run `php -S 127.0.0.1:8080 router.php`.
+- **Nginx**:
+  ```nginx
+  add_header Cross-Origin-Opener-Policy same-origin always;
+  add_header Cross-Origin-Embedder-Policy require-corp always;
+  ```
+- **Apache (`.htaccess`)**:
+  ```apache
+  Header set Cross-Origin-Opener-Policy "same-origin"
+  Header set Cross-Origin-Embedder-Policy "require-corp"
+  ```
 
 ---
 
 ## 📄 License
 - **raylib-wasi**: zlib/libpng license (matches upstream Raylib).
 - **Raylib**: Copyright (c) 2013-2024 Ramon Santamaria (@raysan5).
+

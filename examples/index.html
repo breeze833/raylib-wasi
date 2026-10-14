@@ -145,7 +145,7 @@
       const wasmFile = exampleSelect.value;
       log(`Loading ${wasmFile}...`, '#89b4fa');
 
-      // Recreate canvas element so transferControlToOffscreen() can be called fresh on restarts
+      // Recreate canvas element so a fresh rendering context can be created on restarts
       const oldCanvas = document.getElementById('raylib-canvas');
       const newCanvas = oldCanvas.cloneNode(true);
       oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
