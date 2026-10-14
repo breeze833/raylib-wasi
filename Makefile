@@ -81,5 +81,9 @@ test: all
 	$(NODE) --test test/host.test.js
 	$(NODE) --test test/symbols.test.js
 
+package: all
+	tar -czf $(DIST_DIR)/raylib-wasi.tar.gz -C $(DIST_DIR) include lib raylib-host.js
+	cd $(DIST_DIR) && zip -q -r raylib-wasi.zip include lib raylib-host.js
+
 clean:
-	rm -rf $(BUILD_DIR) $(DIST_DIR)/lib $(DIST_DIR)/include $(EXAMPLES)
+	rm -rf $(BUILD_DIR) $(DIST_DIR)/lib $(DIST_DIR)/include $(DIST_DIR)/*.tar.gz $(DIST_DIR)/*.zip $(EXAMPLES)

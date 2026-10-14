@@ -1,0 +1,61 @@
+name: Build and Test raylib-wasi
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install LLVM, Clang and WASI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm lld wasi-libc zip
+
+      - name: Build raylib-wasi library and bundle
+        run: make all
+
+      - name: Build example programs
+        run: make examples
+
+      - name: Run test suites
+        run: make test
+
+      - name: Package release archives
+        run: make package
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: raylib-wasi-dist
+          path: |
+            dist/raylib-wasi.tar.gz
+            dist/raylib-wasi.zip
+            dist/raylib-host.js
+            dist/include/
+            dist/lib/
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/raylib-wasi.tar.gz
+            dist/raylib-wasi.zip
+            dist/raylib-host.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
