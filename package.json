@@ -9,6 +9,7 @@
   "exports": {
     ".": "./dist/raylib-host.js",
     "./host": "./dist/raylib-host.js",
+    "./headers": "./dist/headers.js",
     "./include/*": "./dist/include/*",
     "./lib/*": "./dist/lib/*"
   },

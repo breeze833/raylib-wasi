@@ -99,8 +99,13 @@ Raylib's `PLATFORM_CUSTOM` requires implementing standard hooks defined in `rcor
     Calls requiring pointer and string translation across the Wasm/JS boundary (such as `glGetString`, `glGetShaderInfoLog`, `glGetProgramInfoLog`, `glShaderSource`, and `glGetUniformLocation`) use C wrapper functions in `src/gl_wasi.c`.
     - For example, `glGetString(GL_EXTENSIONS)` or `glGetString(GL_VERSION)` uses static C buffers populated by concise host imports, ensuring zero pointer confusion and eliminating the need for complex JavaScript-side Wasm heap allocators.
 
-### 3.4 Host Runtime Bridge (`dist/raylib-host.js`)
+### 3.4 Host Runtime Bridge (`dist/raylib-host.js`) & Module Exports
 A standalone, zero-dependency ES module providing import namespaces to `WebAssembly.instantiate`:
+- **Module Exports (`package.json`)**:
+  - `.` / `./host`: `dist/raylib-host.js` exporting `createRaylibHost`, `createGLImports`, `InputCoordinator`, `createWasiImports`.
+  - `./headers`: `dist/headers.js` exporting `RAYLIB_H`, `RAYMATH_H`, and `RLGL_H` as JavaScript string constants for virtual filesystems.
+  - `./include/*`: Direct file access to C headers (`dist/include/raylib.h`, etc.).
+  - `./lib/*`: Precompiled static archives when installed with binary assets.
 - **Module Namespaces**:
   - `"gl"`: WebGL ES 2.0 bindings and handle table translations.
   - `"raylib"`: Window lifecycle (`raylib_host_init_window`, `raylib_host_close_window`), screen query functions, and timing (`raylib_host_sleep`).
@@ -108,13 +113,18 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
 - **WebGL Dispatcher**:
   - Maps integer IDs (1, 2, 3...) to WebGL objects (`WebGLBuffer`, `WebGLTexture`, `WebGLProgram`, `WebGLShader`).
   - Supports rendering on `HTMLCanvasElement` or worker-based `OffscreenCanvas`.
-- **Input Coordinator**:
+- **Input Coordinator & Interoperability**:
   - Captures DOM / canvas input events (`keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`, `wheel`).
-  - Synchronously updates the `SharedArrayBuffer` read by `rcore_wasi.c`.
-- **Worker Execution Context**:
-  - Designed for execution inside Web Workers (e.g. terminal workers in `wasm-c-ide`), allowing synchronous frame loops and `Atomics.wait()` sleep pacing.
+  - Synchronously updates the `SharedArrayBuffer` (512 bytes) read by `rcore_wasi.c`.
+  - Supports external input coordinator injection via `createRaylibHost({ inputCoordinator })`, allowing shared input coordinator instances with host systems such as `canvas-wasi`.
+  - Provides blur resets, windowTarget pop-up delegation, and explicit `reset()` lifecycle cleaning.
+- **Dynamic Window Resizing & Frame Pacing**:
+  - `raylib_host_init_window` dynamically resizes canvas dimensions to user-requested size (`InitWindow(w, h, title)`).
+  - `raylib_host_swap_buffers` delivers frames via synchronous zero-copy `transferToImageBitmap()` without Promise tick delays.
+  - Frame pacing via `Atomics.wait()` on `syncWord` in `SharedArrayBuffer` throttles `while (!WindowShouldClose())` loops to target FPS without busy-waiting.
+  - Computes and emits FPS every 1000ms via `onFPS` callback.
 
-### 3.5 Build System & Toolchain
+### 3.5 Build System, Headers Generation & Packaging
 - **Compiler**: Clang (LLVM 19+) targeting `wasm32-wasi`.
 - **Linker & Libc**: `wasm-ld-19` / `wasm-ld` with `wasi-libc` (using `-nodefaultlibs -lc`) or standard `wasi-sdk`.
 - **Compilation Flags**:
@@ -127,6 +137,9 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
   -Isrc
   ```
 - **Archiver**: `llvm-ar rcs dist/lib/libraylib.a ...`
+- **Zero-Binary & Generated Headers Distribution Policy**:
+  - `libraylib.a` is compiled in GitHub Actions CI and released as downloadable release assets on GitHub Releases (`raylib-wasi.tar.gz`), ensuring zero binary Wasm files are committed to the Git repository.
+  - Public C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are copied to `dist/include/` and generated as string constants in `dist/headers.js` from `vendor/raylib/src/` at build time by `scripts/bundle-host.js`. They are excluded from Git tracking (`.gitignore`), but included in published npm module distributions via `package.json`'s `files` list.
 - **Output Bundle (`dist/`)**:
   ```
   dist/
@@ -135,8 +148,11 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
   │   ├── raymath.h
   │   └── rlgl.h
   ├── lib/
-  │   └── libraylib.a
-  └── raylib-host.js
+  │   └── libraylib.a (CI release asset)
+  ├── headers.js (generated module export)
+  ├── headers.d.ts
+  ├── raylib-host.js
+  └── raylib-host.d.ts
   ```
 
 ---

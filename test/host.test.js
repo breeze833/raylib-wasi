@@ -204,3 +204,54 @@ test('raylib_host_swap_buffers captures ImageBitmap from OffscreenCanvas and dis
   assert.strictEqual(bitmapTransferred, true);
   assert.strictEqual(frameReceived, fakeBitmap);
 });
+
+test('dist/headers.js exports Raylib header string constants', async () => {
+  const { RAYLIB_H, RAYMATH_H, RLGL_H } = await import('../dist/headers.js');
+  assert.strictEqual(typeof RAYLIB_H, 'string');
+  assert.strictEqual(typeof RAYMATH_H, 'string');
+  assert.strictEqual(typeof RLGL_H, 'string');
+  assert.strictEqual(RAYLIB_H.includes('InitWindow'), true);
+  assert.strictEqual(RAYMATH_H.includes('Vector2'), true);
+  assert.strictEqual(RLGL_H.includes('rlgl'), true);
+});
+
+test('createRaylibHost supports input injection, dynamic resize, and onFPS callback', () => {
+  let initedTitle = '';
+  let initedW = 0;
+  let initedH = 0;
+  let reportedFps = 0;
+
+  const mockCanvas = { width: 100, height: 100, transferToImageBitmap: () => ({}) };
+  const customInput = new InputCoordinator({ width: 100, height: 100 });
+
+  const host = createRaylibHost({
+    canvas: mockCanvas,
+    inputCoordinator: customInput,
+    onInitWindow: (w, h, title) => {
+      initedW = w;
+      initedH = h;
+      initedTitle = title;
+    },
+    onFPS: (fps) => {
+      reportedFps = fps;
+    }
+  });
+
+  assert.strictEqual(host.input, customInput);
+
+  const wasmMem = new WebAssembly.Memory({ initial: 1 });
+  host.setMemory(wasmMem);
+
+  // Write "Test Title" into memory
+  const str = 'Test Title\0';
+  const u8 = new Uint8Array(wasmMem.buffer, 1024, str.length);
+  for (let i = 0; i < str.length; i++) u8[i] = str.charCodeAt(i);
+
+  host.getImports().raylib.raylib_host_init_window(640, 480, 1024);
+  assert.strictEqual(mockCanvas.width, 640);
+  assert.strictEqual(mockCanvas.height, 480);
+  assert.strictEqual(initedW, 640);
+  assert.strictEqual(initedH, 480);
+  assert.strictEqual(initedTitle, 'Test Title');
+  assert.strictEqual(customInput.shouldClose, false);
+});

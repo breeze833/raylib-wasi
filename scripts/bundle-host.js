@@ -46,3 +46,27 @@ export default createRaylibHost;
 
 fs.writeFileSync(path.join(distDir, 'raylib-host.js'), bundleContent, 'utf-8');
 console.log('Successfully bundled dist/raylib-host.js (' + Buffer.byteLength(bundleContent) + ' bytes)');
+
+// Copy and generate headers if submodule is present
+const vendorIncDir = path.join(__dirname, '..', 'vendor', 'raylib', 'src');
+const distIncDir = path.join(distDir, 'include');
+
+if (fs.existsSync(path.join(vendorIncDir, 'raylib.h'))) {
+  if (!fs.existsSync(distIncDir)) {
+    fs.mkdirSync(distIncDir, { recursive: true });
+  }
+  const raylibH = fs.readFileSync(path.join(vendorIncDir, 'raylib.h'), 'utf-8');
+  const raymathH = fs.readFileSync(path.join(vendorIncDir, 'raymath.h'), 'utf-8');
+  const rlglH = fs.readFileSync(path.join(vendorIncDir, 'rlgl.h'), 'utf-8');
+
+  fs.writeFileSync(path.join(distIncDir, 'raylib.h'), raylibH, 'utf-8');
+  fs.writeFileSync(path.join(distIncDir, 'raymath.h'), raymathH, 'utf-8');
+  fs.writeFileSync(path.join(distIncDir, 'rlgl.h'), rlglH, 'utf-8');
+
+  const headersJs = `// raylib-wasi: C headers exported as string constants for browser virtual filesystems\n// Generated automatically from vendor/raylib/src by scripts/bundle-host.js\n\nexport const RAYLIB_H = ${JSON.stringify(raylibH)};\n\nexport const RAYMATH_H = ${JSON.stringify(raymathH)};\n\nexport const RLGL_H = ${JSON.stringify(rlglH)};\n`;
+  fs.writeFileSync(path.join(distDir, 'headers.js'), headersJs, 'utf-8');
+
+  const headersDts = `export declare const RAYLIB_H: string;\nexport declare const RAYMATH_H: string;\nexport declare const RLGL_H: string;\n`;
+  fs.writeFileSync(path.join(distDir, 'headers.d.ts'), headersDts, 'utf-8');
+  console.log('Successfully generated dist/headers.js and copied dist/include headers');
+}

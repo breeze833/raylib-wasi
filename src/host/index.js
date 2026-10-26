@@ -45,7 +45,7 @@ export function createRaylibHost(options = {}) {
   }
 
   // Create sub-modules
-  const input = new InputCoordinator({
+  const input = options.inputCoordinator || options.input || new InputCoordinator({
     canvas,
     sharedBuffer: options.sharedBuffer || null,
     width: options.width || (canvas ? canvas.width : 800),
@@ -56,20 +56,29 @@ export function createRaylibHost(options = {}) {
   const glImports = gl ? createGLImports(gl, getMemory) : {};
   const wasiImports = createWasiImports(getMemory, options);
 
+  let lastFpsTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  let frameCount = 0;
+
   const raylibImports = {
     raylib_host_init_window: (width, height, titlePtr) => {
       const title = decodeString(titlePtr);
       if (canvas) {
-        if (!canvas.width) canvas.width = width;
-        if (!canvas.height) canvas.height = height;
+        canvas.width = width;
+        canvas.height = height;
       }
       input.windowWidth = width;
       input.windowHeight = height;
       input.renderWidth = width;
       input.renderHeight = height;
+      input.shouldClose = false;
       input.updateSharedState();
+      lastFpsTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      frameCount = 0;
       if (typeof document !== 'undefined' && title) {
         document.title = title;
+      }
+      if (options.onInitWindow) {
+        options.onInitWindow(width, height, title);
       }
       return 0;
     },
@@ -94,6 +103,20 @@ export function createRaylibHost(options = {}) {
         options.onFrame(bitmap);
       } else if (bitmap && typeof self !== 'undefined' && typeof self.postMessage === 'function') {
         self.postMessage({ type: 'frame', bitmap }, [bitmap]);
+      }
+
+      // Track and emit FPS
+      frameCount++;
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (now - lastFpsTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        if (options.onFPS) {
+          options.onFPS(fps);
+        } else if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
+          self.postMessage({ type: 'fps', fps });
+        }
+        frameCount = 0;
+        lastFpsTime = now;
       }
 
       // Legacy OffscreenCanvas commit if available

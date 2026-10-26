@@ -1,6 +1,6 @@
-// input.js - Keyboard and Mouse Input Coordinator with SharedArrayBuffer support
+// canvas-wasi: Keyboard, Mouse, and Touch Input Coordinator with SharedArrayBuffer support
 
-const DOM_KEY_MAP = {
+export const DOM_KEY_MAP = {
   KeyA: 65, KeyB: 66, KeyC: 67, KeyD: 68, KeyE: 69, KeyF: 70, KeyG: 71,
   KeyH: 72, KeyI: 73, KeyJ: 74, KeyK: 75, KeyL: 76, KeyM: 77, KeyN: 78,
   KeyO: 79, KeyP: 80, KeyQ: 81, KeyR: 82, KeyS: 83, KeyT: 84, KeyU: 85,
@@ -42,8 +42,8 @@ export class InputCoordinator {
     this.dpiScale = options.dpiScale || 1.0;
     this.shouldClose = false;
 
-    this.mouseX = 0;
-    this.mouseY = 0;
+    this.mouseX = -1;
+    this.mouseY = -1;
     this.mouseWheelX = 0;
     this.mouseWheelY = 0;
     this.mouseButtons = 0;
@@ -51,6 +51,8 @@ export class InputCoordinator {
     this.keysDown = new Uint32Array(16); // 512 bits
     this.keyPressedQueue = [];
     this.charPressedQueue = [];
+    this.listeners = new Set();
+    this.cleanupFn = null;
 
     if (this.sharedBuffer) {
       this.sharedView = new DataView(this.sharedBuffer);
@@ -63,7 +65,34 @@ export class InputCoordinator {
     }
   }
 
-  attachListeners(canvas) {
+  addListener(fn) {
+    if (typeof fn === 'function') {
+      this.listeners.add(fn);
+      return () => this.listeners.delete(fn);
+    }
+    return () => {};
+  }
+
+  notifyListeners(event) {
+    for (const fn of this.listeners) {
+      try {
+        fn(event);
+      } catch (_) {}
+    }
+  }
+
+  detach() {
+    if (typeof this.cleanupFn === 'function') {
+      this.cleanupFn();
+      this.cleanupFn = null;
+    }
+  }
+
+  attachListeners(canvas, windowTarget = null) {
+    this.detach();
+
+    if (!canvas || typeof canvas.addEventListener !== 'function') return;
+
     const getCoords = (e) => {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / (rect.width || 1);
@@ -74,47 +103,72 @@ export class InputCoordinator {
       };
     };
 
-    canvas.addEventListener('mousemove', (e) => {
+    const onMouseMove = (e) => {
+      const pos = getCoords(e);
+      this.mouseX = pos.x;
+      this.mouseY = pos.y;
+      if (typeof e.buttons === 'number') {
+        this.mouseButtons = e.buttons;
+      }
+      this.updateSharedState();
+      this.notifyListeners({ type: 'mouse', x: this.mouseX, y: this.mouseY, buttons: this.mouseButtons, wheel: this.mouseWheelY });
+    };
+
+    const onMouseDown = (e) => {
+      if (typeof e.buttons === 'number' && e.buttons > 0) {
+        this.mouseButtons = e.buttons;
+      } else {
+        const bit = e.button === 0 ? 1 : (e.button === 2 ? 2 : (e.button === 1 ? 4 : 0));
+        this.mouseButtons |= bit;
+      }
       const pos = getCoords(e);
       this.mouseX = pos.x;
       this.mouseY = pos.y;
       this.updateSharedState();
-    });
+      this.notifyListeners({ type: 'mouse', x: this.mouseX, y: this.mouseY, buttons: this.mouseButtons, wheel: this.mouseWheelY });
+    };
 
-    canvas.addEventListener('mousedown', (e) => {
-      const bit = e.button === 0 ? 1 : (e.button === 2 ? 2 : (e.button === 1 ? 4 : 0));
-      this.mouseButtons |= bit;
+    const onMouseUp = (e) => {
+      if (typeof e.buttons === 'number') {
+        this.mouseButtons = e.buttons;
+      } else {
+        const bit = e.button === 0 ? 1 : (e.button === 2 ? 2 : (e.button === 1 ? 4 : 0));
+        this.mouseButtons &= ~bit;
+      }
       const pos = getCoords(e);
       this.mouseX = pos.x;
       this.mouseY = pos.y;
       this.updateSharedState();
-    });
+      this.notifyListeners({ type: 'mouse', x: this.mouseX, y: this.mouseY, buttons: this.mouseButtons, wheel: this.mouseWheelY });
+    };
 
-    canvas.addEventListener('mouseup', (e) => {
-      const bit = e.button === 0 ? 1 : (e.button === 2 ? 2 : (e.button === 1 ? 4 : 0));
-      this.mouseButtons &= ~bit;
+    const onMouseLeave = () => {
+      this.mouseX = -1;
+      this.mouseY = -1;
+      this.mouseButtons = 0;
       this.updateSharedState();
-    });
+      this.notifyListeners({ type: 'mouse', x: -1, y: -1, buttons: 0, wheel: this.mouseWheelY });
+    };
 
-    canvas.addEventListener('wheel', (e) => {
+    const onWheel = (e) => {
       this.mouseWheelX += (e.deltaX > 0 ? 1 : (e.deltaX < 0 ? -1 : 0));
       this.mouseWheelY += (e.deltaY > 0 ? -1 : (e.deltaY < 0 ? 1 : 0));
       this.updateSharedState();
+      this.notifyListeners({ type: 'mouse', x: this.mouseX, y: this.mouseY, buttons: this.mouseButtons, wheel: this.mouseWheelY });
       e.preventDefault();
-    }, { passive: false });
+    };
 
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    const onContextMenu = (e) => e.preventDefault();
 
-    // Window keyboard listeners
-    const target = typeof window !== 'undefined' ? window : canvas;
-    target.addEventListener('keydown', (e) => {
-      const rayKey = DOM_KEY_MAP[e.code] || e.keyCode;
-      if (rayKey >= 0 && rayKey < 512) {
-        const word = Math.floor(rayKey / 32);
-        const bit = rayKey % 32;
+    const onKeyDown = (e) => {
+      if (e.target && e.target.id === 'btn-dock') return;
+      const key = DOM_KEY_MAP[e.code] || e.keyCode;
+      if (key >= 0 && key < 512) {
+        const word = Math.floor(key / 32);
+        const bit = key % 32;
         this.keysDown[word] |= (1 << bit);
         if (this.keyPressedQueue.length < 32) {
-          this.keyPressedQueue.push(rayKey);
+          this.keyPressedQueue.push(key);
         }
       }
       if (e.key && e.key.length === 1) {
@@ -126,18 +180,82 @@ export class InputCoordinator {
       if (e.code === 'Escape') {
         this.shouldClose = true;
       }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+        if (typeof e.preventDefault === 'function') {
+          e.preventDefault();
+        }
+      }
       this.updateSharedState();
-    });
+      this.notifyListeners({ type: 'keydown', key, code: e.code });
+    };
 
-    target.addEventListener('keyup', (e) => {
-      const rayKey = DOM_KEY_MAP[e.code] || e.keyCode;
-      if (rayKey >= 0 && rayKey < 512) {
-        const word = Math.floor(rayKey / 32);
-        const bit = rayKey % 32;
+    const onKeyUp = (e) => {
+      if (e.target && e.target.id === 'btn-dock') return;
+      const key = DOM_KEY_MAP[e.code] || e.keyCode;
+      if (key >= 0 && key < 512) {
+        const word = Math.floor(key / 32);
+        const bit = key % 32;
         this.keysDown[word] &= ~(1 << bit);
       }
       this.updateSharedState();
-    });
+      this.notifyListeners({ type: 'keyup', key, code: e.code });
+    };
+
+    const onBlur = () => {
+      this.keysDown.fill(0);
+      this.mouseButtons = 0;
+      this.updateSharedState();
+      this.notifyListeners({ type: 'blur' });
+    };
+
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('mouseleave', onMouseLeave);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('contextmenu', onContextMenu);
+
+    const keyTarget = windowTarget || canvas;
+    const mouseUpTarget = windowTarget || canvas;
+
+    mouseUpTarget.addEventListener('mouseup', onMouseUp);
+    keyTarget.addEventListener('keydown', onKeyDown);
+    keyTarget.addEventListener('keyup', onKeyUp);
+    keyTarget.addEventListener('blur', onBlur);
+
+    this.cleanupFn = () => {
+      if (typeof canvas.removeEventListener === 'function') {
+        canvas.removeEventListener('mousemove', onMouseMove);
+        canvas.removeEventListener('mousedown', onMouseDown);
+        canvas.removeEventListener('mouseleave', onMouseLeave);
+        canvas.removeEventListener('wheel', onWheel);
+        canvas.removeEventListener('contextmenu', onContextMenu);
+      }
+      if (typeof mouseUpTarget.removeEventListener === 'function') {
+        mouseUpTarget.removeEventListener('mouseup', onMouseUp);
+      }
+      if (typeof keyTarget.removeEventListener === 'function') {
+        keyTarget.removeEventListener('keydown', onKeyDown);
+        keyTarget.removeEventListener('keyup', onKeyUp);
+        keyTarget.removeEventListener('blur', onBlur);
+      }
+    };
+  }
+
+  reset() {
+    this.shouldClose = false;
+    this.mouseX = -1;
+    this.mouseY = -1;
+    this.mouseButtons = 0;
+    this.mouseWheelX = 0;
+    this.mouseWheelY = 0;
+    this.keysDown.fill(0);
+    this.keyPressedQueue.length = 0;
+    this.charPressedQueue.length = 0;
+
+    if (this.sharedBuffer) {
+      this.sharedU8.fill(0);
+      this.updateSharedState();
+    }
   }
 
   updateSharedState() {
@@ -173,13 +291,11 @@ export class InputCoordinator {
     }
   }
 
-  // Called synchronously by rcore_wasi.c on each frame
+  // Poll state synchronously into Wasm linear memory (used by rcore_wasi or direct wasm callers)
   pollToWasm(destPtr, mem) {
     if (this.sharedBuffer) {
-      // Direct copy from SharedArrayBuffer to Wasm linear memory
       const destU8 = new Uint8Array(mem.buffer, destPtr, 372);
       destU8.set(this.sharedU8.subarray(0, 372));
-      // Reset wheel deltas and queues in shared buffer
       this.sharedView.setFloat32(32, 0, true);
       this.sharedView.setFloat32(36, 0, true);
       this.sharedView.setInt32(108, 0, true);
@@ -187,7 +303,6 @@ export class InputCoordinator {
       return;
     }
 
-    // Single-thread / local memory fallback
     const view = new DataView(mem.buffer, destPtr, 372);
     view.setInt32(0, this.windowWidth, true);
     view.setInt32(4, this.windowHeight, true);
@@ -211,17 +326,13 @@ export class InputCoordinator {
     for (let i = 0; i < kCount; i++) {
       view.setInt32(112 + i * 4, this.keyPressedQueue[i], true);
     }
+    this.keyPressedQueue.length = 0;
 
     const cCount = Math.min(this.charPressedQueue.length, 32);
     view.setInt32(240, cCount, true);
     for (let i = 0; i < cCount; i++) {
       view.setInt32(244 + i * 4, this.charPressedQueue[i], true);
     }
-
-    // Reset frame-transient values
-    this.mouseWheelX = 0;
-    this.mouseWheelY = 0;
-    this.keyPressedQueue.length = 0;
     this.charPressedQueue.length = 0;
   }
 }

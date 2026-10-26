@@ -15,7 +15,10 @@
 - **Zero-Diff Upstream Maintenance**: Upstream `raysan5/raylib` is tracked as an untouched Git submodule at release tag `5.5`. Not a single line of Raylib's source is patched.
 - **Raylib 5.5 `PLATFORM_CUSTOM` Architecture**: Implemented via a clean custom platform adapter (`src/rcore_wasi.c`) and WebGL / GLES 2.0 bindings (`src/gl_wasi.c`, `src/gl_wasi.h`, `src/GLES2/`).
 - **Synchronous Web Worker Execution (`wasm-c-ide` integration)**: Standard Raylib game loops (`while (!WindowShouldClose())`) run directly inside Web Workers without freezing the browser UI, using `SharedArrayBuffer` and `Atomics.wait()` for frame pacing (`SetTargetFPS(60)`) and synchronous keyboard/mouse input handling.
-- **Zero-Dependency Host Bridge**: Standalone vanilla ES module runtime (`dist/raylib-host.js`, ~39 KB) supplying `"gl"`, `"raylib"`, and `"wasi_snapshot_preview1"` namespaces to `WebAssembly.instantiate`.
+- **Zero-Dependency Host Bridge**: Standalone vanilla ES module runtime (`dist/raylib-host.js`, ~45 KB) supplying `"gl"`, `"raylib"`, and `"wasi_snapshot_preview1"` namespaces to `WebAssembly.instantiate`.
+- **Virtual Filesystem Ready (`@breeze833/raylib-wasi/headers`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs without external network requests.
+- **Injectable Input Coordinator**: Supports sharing an external `InputCoordinator` (such as `canvas-wasi`'s coordinator) over the standard 512-byte `SharedArrayBuffer` layout.
+- **Zero-Binary Repository Policy**: Neither compiled binary `.a` archives nor upstream header copies are tracked in Git; binaries are published on GitHub Releases and headers are generated at build time.
 
 ---
 
@@ -83,9 +86,12 @@
 │   ├── host.test.js           # Unit tests for WebGL dispatcher and handle tables
 │   └── symbols.test.js        # Validates exported/imported symbols in libraylib.a
 └── dist/                      # Packaged release output
-    ├── include/               # raylib.h, raymath.h, rlgl.h
-    ├── lib/                   # libraylib.a
-    └── raylib-host.js         # Bundled standalone host runtime bridge
+    ├── include/               # raylib.h, raymath.h, rlgl.h (copied on build)
+    ├── lib/                   # libraylib.a (compiled on build / CI release asset)
+    ├── headers.js             # Exported C headers string constants (RAYLIB_H, etc.)
+    ├── headers.d.ts           # Type declarations for headers.js
+    ├── raylib-host.js         # Bundled standalone host runtime bridge
+    └── raylib-host.d.ts       # Type declarations for raylib-host.js
 ```
 
 ---
@@ -184,15 +190,42 @@ Then run:
 npm install @breeze833/raylib-wasi
 ```
 
-Then import the host runtime bridge directly in your JavaScript / TypeScript code:
+Then import the host runtime bridge and virtual filesystem headers in your JavaScript / TypeScript code:
 
 ```javascript
-import { createRaylibHost } from '@breeze833/raylib-wasi';
+// Import the host bridge runtime
+import { createRaylibHost, createGLImports, InputCoordinator } from '@breeze833/raylib-wasi';
+
+// Import C headers as string constants (e.g. for VFS mounting)
+import { RAYLIB_H, RAYMATH_H, RLGL_H } from '@breeze833/raylib-wasi/headers';
+```
+
+#### Host Bridge Configuration Options
+```javascript
+const host = createRaylibHost({
+  canvas,               // HTMLCanvasElement or worker OffscreenCanvas
+  gl,                   // Optional pre-created WebGLRenderingContext
+  sharedBuffer,         // 512-byte SharedArrayBuffer for zero-copy sync
+  inputCoordinator,     // Optional: inject external coordinator (e.g. from canvas-wasi)
+  onFrame: (bitmap) => {
+    // Deliver ImageBitmap frame synchronously to main thread
+  },
+  onFPS: (fps) => {
+    // Rolling 1-second FPS metric
+  },
+  onInitWindow: (width, height, title) => {
+    // Notification when game calls InitWindow(w, h, title)
+  },
+  onClose: () => {
+    // Notification when game closes or WindowShouldClose() becomes true
+  }
+});
 ```
 
 And access the precompiled headers and static library for Wasm compilation at:
 - Header files: `node_modules/@breeze833/raylib-wasi/dist/include/`
 - Static archive: `node_modules/@breeze833/raylib-wasi/dist/lib/libraylib.a`
+- Header string constants: `import { RAYLIB_H, RAYMATH_H, RLGL_H } from '@breeze833/raylib-wasi/headers'`
 
 ### Option 3: Git Submodule (Source Integration)
 
