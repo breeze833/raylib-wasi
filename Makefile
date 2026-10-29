@@ -88,7 +88,6 @@ package: all
 	tar -czf $(DIST_DIR)/raylib-wasi.tar.gz -C $(DIST_DIR) include lib raylib-host.js raylib-host.d.ts
 	cd $(DIST_DIR) && zip -q -r raylib-wasi.zip include lib raylib-host.js raylib-host.d.ts
 	npm pack --pack-destination $(DIST_DIR)
-	cp $(DIST_DIR)/breeze833-raylib-wasi-*.tgz $(DIST_DIR)/raylib-wasi-5.5.0.tgz 2>/dev/null || true
 
 clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR)/lib $(DIST_DIR)/include $(DIST_DIR)/*.tar.gz $(DIST_DIR)/*.zip $(DIST_DIR)/*.tgz $(EXAMPLES)

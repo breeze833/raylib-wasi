@@ -1,5 +1,5 @@
 {
-  "name": "@breeze833/raylib-wasi",
+  "name": "raylib-wasi",
   "version": "5.5.0",
   "description": "Standalone Raylib 5.5 port and host runtime bridge for WebAssembly (wasm32-wasi) without Emscripten",
   "type": "module",
@@ -27,10 +27,6 @@
     "build": "make all",
     "test": "node --test test/*.js",
     "package": "make package"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://npm.pkg.github.com"
   },
   "keywords": [
     "raylib",
