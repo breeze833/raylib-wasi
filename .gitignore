@@ -4,6 +4,8 @@ dist/lib/
 dist/include/
 dist/*.tar.gz
 dist/*.zip
+dist/*.tgz
+*.tgz
 dist/headers.js
 dist/headers.d.ts
 .DS_Store

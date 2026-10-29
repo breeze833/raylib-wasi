@@ -14,7 +14,10 @@
     "./lib/*": "./dist/lib/*"
   },
   "files": [
-    "dist",
+    "dist/include",
+    "dist/lib",
+    "dist/raylib-host.js",
+    "dist/raylib-host.d.ts",
     "scripts/postinstall.js",
     "README.md",
     "LICENSE"

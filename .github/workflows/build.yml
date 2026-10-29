@@ -53,6 +53,7 @@ jobs:
             dist/raylib-host.d.ts
             dist/include/
             dist/lib/
+            dist/*.tgz
 
       - name: Publish Latest Pre-release (Push to main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -64,6 +65,8 @@ jobs:
             Automated continuous build from the latest commit on `main`.
 
             ### 📦 Downloadable Assets:
+            - **`raylib-wasi-5.5.0.tgz`**: Ready-to-use npm package tarball for fast zero-submodule `npm install`
+            - **`breeze833-raylib-wasi-5.5.0.tgz`**: Scoped package tarball matching `@breeze833/raylib-wasi`
             - **`raylib-wasi.tar.gz`**: Precompiled distribution archive (`include/`, `lib/libraylib.a`, and `raylib-host.js`)
             - **`raylib-wasi.zip`**: ZIP archive of the distribution bundle
             - **`raylib-host.js`**: Standalone vanilla ES module host runtime bridge
@@ -74,6 +77,7 @@ jobs:
             dist/raylib-wasi.zip
             dist/raylib-host.js
             dist/raylib-host.d.ts
+            dist/*.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -88,6 +92,7 @@ jobs:
             dist/raylib-wasi.zip
             dist/raylib-host.js
             dist/raylib-host.d.ts
+            dist/*.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
