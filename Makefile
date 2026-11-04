@@ -7,6 +7,7 @@ NODE ?= node
 TARGET ?= wasm32-wasi
 
 RAYLIB_SRC = vendor/raylib/src
+RAYGUI_SRC = vendor/raylib/examples/shapes
 SRC_DIR = src
 DIST_DIR = dist
 DIST_INC = $(DIST_DIR)/include
@@ -37,7 +38,8 @@ ALL_OBJS = $(RAYLIB_OBJS) $(PLATFORM_OBJS)
 EXAMPLES = examples/core_basic_window.wasm \
            examples/shapes_basic_shapes.wasm \
            examples/core_input_keys.wasm \
-           examples/audio_sound_loading.wasm
+           examples/audio_sound_loading.wasm \
+           examples/gui_controls.wasm
 
 .PHONY: all clean headers host test examples package serve
 
@@ -77,6 +79,7 @@ headers: | $(DIST_INC)
 	cp $(RAYLIB_SRC)/raylib.h $(DIST_INC)/
 	cp $(RAYLIB_SRC)/raymath.h $(DIST_INC)/
 	cp $(RAYLIB_SRC)/rlgl.h $(DIST_INC)/
+	cp $(RAYGUI_SRC)/raygui.h $(DIST_INC)/
 
 # Bundle standalone host bridge
 host:

@@ -17,7 +17,8 @@
 - **Synchronous Web Worker Execution (`wasm-c-ide` integration)**: Standard Raylib game loops (`while (!WindowShouldClose())`) run directly inside Web Workers without freezing the browser UI, using `SharedArrayBuffer` and `Atomics.wait()` for frame pacing (`SetTargetFPS(60)`) and synchronous keyboard/mouse input handling.
 - **Zero-Dependency Host Bridge**: Standalone vanilla ES module runtime (`dist/raylib-host.js`) supplying `"gl"`, `"raylib"`, `"audio"`, and `"wasi_snapshot_preview1"` namespaces to `WebAssembly.instantiate`.
 - **Hardware-Decoupled Web Audio Subsystem**: Full Raylib audio API (`InitAudioDevice`, `Sound`, `Wave`, `Music`, `AudioStream`) implemented via `src/raudio_wasi.c` and Web Audio API (`AudioContext`). Because Web Audio runs on its own dedicated hardware thread, audio playback remains crystal-clear and immune to single-thread frame pacing fluctuations.
-- **Virtual Filesystem Ready (`dist/headers.js`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs (such as `wasm-c-ide`) without external network requests.
+- **Virtual Filesystem Ready (`dist/headers.js`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs (such as `wasm-c-ide`) without external network requests.
+- **Self-Contained GUI Support**: Includes `raygui.h` immediate-mode GUI widgets out of the box for building toolbars, buttons, sliders, and controls in pure C.
 - **Injectable Input Coordinator**: Supports sharing an external `InputCoordinator` (such as `canvas-wasi`'s coordinator) over the standard 512-byte `SharedArrayBuffer` layout.
 - **Zero-Binary Repository Policy**: Neither compiled binary `.a` archives nor upstream header copies are tracked in Git; distributions are published exclusively on GitHub Releases and headers are generated at build time.
 
@@ -44,7 +45,7 @@
 | User Executable (game.wasm compiled for wasm32-wasi)                          |
 |                                                                               |
 |  +-------------------------------------------------------------------------+  |
-|  | User Game Code (main.c, #include "raylib.h")                            |  |
+|  | User Game Code (main.c, #include "raylib.h", #include "raygui.h")       |  |
 |  +------------------------------------+------------------------------------+  |
 |                                       |                                       |
 |  +------------------------------------v------------------------------------+  |
@@ -89,13 +90,14 @@
 │   ├── shapes_basic_shapes.c  # 2D shapes rendering example
 │   ├── core_input_keys.c      # Interactive keyboard/mouse movement example
 │   ├── audio_sound_loading.c  # Interactive procedural wave synthesis & audio playback demo
+│   ├── gui_controls.c         # Immediate-mode GUI demo using raygui.h
 │   ├── index.html             # Browser test harness
 │   └── worker.js              # Web Worker runtime harness
 ├── test/
 │   ├── host.test.js           # Unit tests for WebGL, Web Audio, and handle tables
 │   └── symbols.test.js        # Validates exported/imported symbols in libraylib.a
 └── dist/                      # Packaged release output
-    ├── include/               # raylib.h, raymath.h, rlgl.h (copied on build)
+    ├── include/               # raylib.h, raymath.h, rlgl.h, raygui.h (copied on build)
     ├── lib/                   # libraylib.a (compiled on build / CI release asset)
     ├── headers.js             # Exported C headers string constants (RAYLIB_H, etc.)
     ├── headers.d.ts           # Type declarations for headers.js
@@ -127,7 +129,7 @@ make all
 
 This compiles:
 - `dist/lib/libraylib.a`
-- `dist/include/` (`raylib.h`, `raymath.h`, `rlgl.h`)
+- `dist/include/` (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`)
 - `dist/raylib-host.js`
 
 ### Build Example Binaries
@@ -139,6 +141,7 @@ Generates:
 - `examples/shapes_basic_shapes.wasm`
 - `examples/core_input_keys.wasm`
 - `examples/audio_sound_loading.wasm`
+- `examples/gui_controls.wasm`
 
 ### Run Test Suites
 ```bash
@@ -173,7 +176,8 @@ tar -xzf raylib-wasi.tar.gz
 # ├── include/
 # │   ├── raylib.h
 # │   ├── raymath.h
-# │   └── rlgl.h
+# │   ├── rlgl.h
+# │   └── raygui.h
 # ├── lib/
 # │   └── libraylib.a
 # ├── headers.js
@@ -193,7 +197,7 @@ For browser applications and in-browser IDEs:
 import { createRaylibHost, createGLImports, createAudioReceiver, InputCoordinator } from './dist/raylib-host.js';
 
 // Import C headers as string constants (e.g. for VFS mounting in browser IDEs)
-import { RAYLIB_H, RAYMATH_H, RLGL_H } from './dist/headers.js';
+import { RAYLIB_H, RAYMATH_H, RLGL_H, RAYGUI_H } from './dist/headers.js';
 ```
 
 #### Host Bridge Configuration Options

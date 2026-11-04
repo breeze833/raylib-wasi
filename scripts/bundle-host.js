@@ -52,6 +52,7 @@ console.log('Successfully bundled dist/raylib-host.js (' + Buffer.byteLength(bun
 
 // Copy and generate headers if submodule is present
 const vendorIncDir = path.join(__dirname, '..', 'vendor', 'raylib', 'src');
+const vendorRayguiPath = path.join(__dirname, '..', 'vendor', 'raylib', 'examples', 'shapes', 'raygui.h');
 const distIncDir = path.join(distDir, 'include');
 
 if (fs.existsSync(path.join(vendorIncDir, 'raylib.h'))) {
@@ -61,15 +62,19 @@ if (fs.existsSync(path.join(vendorIncDir, 'raylib.h'))) {
   const raylibH = fs.readFileSync(path.join(vendorIncDir, 'raylib.h'), 'utf-8');
   const raymathH = fs.readFileSync(path.join(vendorIncDir, 'raymath.h'), 'utf-8');
   const rlglH = fs.readFileSync(path.join(vendorIncDir, 'rlgl.h'), 'utf-8');
+  const rayguiH = fs.existsSync(vendorRayguiPath) ? fs.readFileSync(vendorRayguiPath, 'utf-8') : '';
 
   fs.writeFileSync(path.join(distIncDir, 'raylib.h'), raylibH, 'utf-8');
   fs.writeFileSync(path.join(distIncDir, 'raymath.h'), raymathH, 'utf-8');
   fs.writeFileSync(path.join(distIncDir, 'rlgl.h'), rlglH, 'utf-8');
+  if (rayguiH) {
+    fs.writeFileSync(path.join(distIncDir, 'raygui.h'), rayguiH, 'utf-8');
+  }
 
-  const headersJs = `// raylib-wasi: C headers exported as string constants for browser virtual filesystems\n// Generated automatically from vendor/raylib/src by scripts/bundle-host.js\n\nexport const RAYLIB_H = ${JSON.stringify(raylibH)};\n\nexport const RAYMATH_H = ${JSON.stringify(raymathH)};\n\nexport const RLGL_H = ${JSON.stringify(rlglH)};\n`;
+  const headersJs = `// raylib-wasi: C headers exported as string constants for browser virtual filesystems\n// Generated automatically from vendor/raylib/src by scripts/bundle-host.js\n\nexport const RAYLIB_H = ${JSON.stringify(raylibH)};\n\nexport const RAYMATH_H = ${JSON.stringify(raymathH)};\n\nexport const RLGL_H = ${JSON.stringify(rlglH)};\n\nexport const RAYGUI_H = ${JSON.stringify(rayguiH)};\n`;
   fs.writeFileSync(path.join(distDir, 'headers.js'), headersJs, 'utf-8');
 
-  const headersDts = `export declare const RAYLIB_H: string;\nexport declare const RAYMATH_H: string;\nexport declare const RLGL_H: string;\n`;
+  const headersDts = `export declare const RAYLIB_H: string;\nexport declare const RAYMATH_H: string;\nexport declare const RLGL_H: string;\nexport declare const RAYGUI_H: string;\n`;
   fs.writeFileSync(path.join(distDir, 'headers.d.ts'), headersDts, 'utf-8');
-  console.log('Successfully generated dist/headers.js and copied dist/include headers');
+  console.log('Successfully generated dist/headers.js and copied dist/include headers (raylib.h, raymath.h, rlgl.h, raygui.h)');
 }

@@ -208,13 +208,15 @@ test('raylib_host_swap_buffers captures ImageBitmap from OffscreenCanvas and dis
 });
 
 test('dist/headers.js exports Raylib header string constants', async () => {
-  const { RAYLIB_H, RAYMATH_H, RLGL_H } = await import('../dist/headers.js');
+  const { RAYLIB_H, RAYMATH_H, RLGL_H, RAYGUI_H } = await import('../dist/headers.js');
   assert.strictEqual(typeof RAYLIB_H, 'string');
   assert.strictEqual(typeof RAYMATH_H, 'string');
   assert.strictEqual(typeof RLGL_H, 'string');
+  assert.strictEqual(typeof RAYGUI_H, 'string');
   assert.strictEqual(RAYLIB_H.includes('InitWindow'), true);
   assert.strictEqual(RAYMATH_H.includes('Vector2'), true);
   assert.strictEqual(RLGL_H.includes('rlgl'), true);
+  assert.strictEqual(RAYGUI_H.includes('raygui'), true);
 });
 
 test('createRaylibHost supports input injection, dynamic resize, and onFPS callback', () => {

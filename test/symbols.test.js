@@ -81,7 +81,8 @@ test('Example wasm binaries import only allowed namespaces', () => {
     'core_basic_window.wasm',
     'shapes_basic_shapes.wasm',
     'core_input_keys.wasm',
-    'audio_sound_loading.wasm'
+    'audio_sound_loading.wasm',
+    'gui_controls.wasm'
   ];
 
   const allowedModules = new Set(['gl', 'raylib', 'wasi_snapshot_preview1']);
@@ -136,7 +137,8 @@ test('All example wasm binaries run and exit cleanly via raylib-host.js', async 
     'core_basic_window.wasm',
     'shapes_basic_shapes.wasm',
     'core_input_keys.wasm',
-    'audio_sound_loading.wasm'
+    'audio_sound_loading.wasm',
+    'gui_controls.wasm'
   ];
 
   for (const ex of examples) {

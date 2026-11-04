@@ -47,13 +47,14 @@ You are an autonomous senior systems, graphics, and WebAssembly engineer impleme
 │   ├── shapes_basic_shapes.c  # 2D shapes example (rectangles, circles, lines)
 │   ├── core_input_keys.c      # Interactive keyboard movement example
 │   ├── audio_sound_loading.c  # Interactive procedural wave synthesis & audio playback demo
+│   ├── gui_controls.c         # Interactive immediate-mode GUI demo with raygui.h
 │   ├── index.html             # Browser test harness
 │   └── worker.js              # Web Worker runtime harness
 ├── test/
 │   ├── symbols.test.js        # Validates exported/imported symbols in libraylib.a
 │   └── host.test.js           # Unit tests for WebGL, Web Audio, and handle tables
 └── dist/                      # Packaged release output
-    ├── include/               # raylib.h, raymath.h, rlgl.h (copied on build)
+    ├── include/               # raylib.h, raymath.h, rlgl.h, raygui.h (copied on build)
     ├── lib/                   # libraylib.a (CI release asset)
     ├── headers.js             # Exported C header string constants (RAYLIB_H, etc.)
     ├── headers.d.ts           # Type declarations for headers.js
@@ -93,7 +94,7 @@ Proceed milestone-by-milestone:
   - Compile unmodified upstream files: `rshapes.c`, `rtextures.c`, `rtext.c`, `rmodels.c`, `rcore.c`.
   - Compile `src/rcore_wasi.c` and `src/gl_wasi.c`.
   - Archive objects into `dist/lib/libraylib.a` using `llvm-ar`.
-- Copy upstream headers (`raylib.h`, `raymath.h`, `rlgl.h`) into `dist/include/`.
+- Copy headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) into `dist/include/`.
 
 ### Milestone 4: Verification & Example Apps
 - Compile `examples/core_basic_window.c` with:
@@ -101,6 +102,7 @@ Proceed milestone-by-milestone:
 - Build a lightweight local test harness (`index.html`) running the Wasm binary inside a Web Worker using `raylib-host.js` to verify:
   - 60 FPS drawing clamped via `Atomics.wait()`.
   - Keyboard and mouse interaction.
+  - Immediate-mode GUI controls with `raygui.h` in `examples/gui_controls.c`.
   - Proper window close and clean exit code 0.
 - Add automated symbol verification in `test/symbols.test.js`.
 

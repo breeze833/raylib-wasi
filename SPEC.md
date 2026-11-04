@@ -9,7 +9,7 @@
 - **Raylib 5.5 `PLATFORM_CUSTOM` Architecture**: Leverage Raylib's official platform-split architecture by providing a custom platform adapter (`rcore_wasi.c`).
 - **Synchronous Web Worker Execution (wasm-c-ide integration)**: Enable standard Raylib loops (`while (!WindowShouldClose())`) to run inside a Web Worker (such as an xterm terminal emulator process in `wasm-c-ide`) without freezing the browser, using `SharedArrayBuffer` and `Atomics.wait()` for frame pacing and input synchronization.
 - **Dual Deliverables**:
-  1. `libraylib.a` + standard headers (`raylib.h`, `raymath.h`, `rlgl.h`) for compilation into user binaries.
+  1. `libraylib.a` + standard headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) for compilation into user binaries.
   2. `raylib-host.js`: A lightweight, zero-dependency vanilla ES module host bridge supplying WebGL and input imports to `WebAssembly.instantiate` in browser or worker contexts.
 
 ---
@@ -160,7 +160,7 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
 - **Archiver**: `llvm-ar rcs dist/lib/libraylib.a ...`
 - **Zero-Binary & Generated Headers Distribution Policy**:
   - `libraylib.a` is compiled in GitHub Actions CI and released as downloadable release assets on GitHub Releases (`raylib-wasi.tar.gz`), ensuring zero binary Wasm files are committed to the Git repository.
-  - Public C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are copied to `dist/include/` and generated as string constants in `dist/headers.js` from `vendor/raylib/src/` at build time by `scripts/bundle-host.js`.
+  - Public C headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) are copied to `dist/include/` and generated as string constants in `dist/headers.js` from `vendor/raylib/` at build time by `scripts/bundle-host.js`.
   - **Release Page Distribution Only**: Distributions are published exclusively via the GitHub Releases page. GitHub Packages and npm registry distributions are not maintained.
 - **Output Bundle (`dist/`)**:
   ```
@@ -168,7 +168,8 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
   ├── include/
   │   ├── raylib.h
   │   ├── raymath.h
-  │   └── rlgl.h
+  │   ├── rlgl.h
+  │   └── raygui.h
   ├── lib/
   │   └── libraylib.a (CI release asset)
   ├── headers.js (generated module export)
@@ -191,4 +192,5 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
 | **Sample Binary: Input Handling** | Moving mouse and pressing arrow keys moves shapes on canvas in real-time. |
 | **Sample Binary: 2D Shapes & Text** | Rectangles, circles, lines, and custom fonts render accurately without WebGL errors. |
 | **Sample Binary: Audio Playback** | `examples/audio_sound_loading.c` synthesizes wave and plays audible sound through Web Audio API on click or Spacebar. |
+| **Sample Binary: GUI Controls** | `examples/gui_controls.c` uses `raygui.h` (`GuiButton`, `GuiSlider`, `GuiCheckBox`, etc.) and renders interactive widgets cleanly. |
 | **Clean Loop Exit** | Closing window or pressing Escape causes `WindowShouldClose()` to return true and program exits with code 0. |
