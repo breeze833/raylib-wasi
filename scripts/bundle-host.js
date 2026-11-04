@@ -15,6 +15,7 @@ if (!fs.existsSync(distDir)) {
 const glContextSrc = fs.readFileSync(path.join(hostDir, 'gl-context.js'), 'utf-8');
 const inputSrc = fs.readFileSync(path.join(hostDir, 'input.js'), 'utf-8');
 const wasiSrc = fs.readFileSync(path.join(hostDir, 'wasi.js'), 'utf-8');
+const audioSrc = fs.readFileSync(path.join(hostDir, 'audio-context.js'), 'utf-8');
 const indexSrc = fs.readFileSync(path.join(hostDir, 'index.js'), 'utf-8');
 
 // Strip export declarations from inner modules and assemble single standalone ES module
@@ -38,9 +39,11 @@ ${stripImportsAndExports(inputSrc)}
 
 ${stripImportsAndExports(wasiSrc)}
 
+${stripImportsAndExports(audioSrc)}
+
 ${stripImportsAndExports(indexSrc)}
 
-export { createGLImports, InputCoordinator, createWasiImports, createRaylibHost };
+export { createGLImports, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver, createRaylibHost };
 export default createRaylibHost;
 `;
 

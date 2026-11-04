@@ -5,6 +5,7 @@
 export interface RaylibHostOptions {
   canvas?: HTMLCanvasElement | OffscreenCanvas | null;
   gl?: WebGLRenderingContext | null;
+  audioContext?: AudioContext | null;
   sharedBuffer?: SharedArrayBuffer | null;
   width?: number;
   height?: number;
@@ -13,14 +14,18 @@ export interface RaylibHostOptions {
   printErr?: (text: string) => void;
   onFrame?: (bitmap?: ImageBitmap | null) => void;
   onClose?: () => void;
+  onAudioInit?: () => void;
+  onAudioMessage?: (msg: any) => void;
 }
 
 export interface RaylibHostInstance {
   input: InputCoordinator;
   gl: WebGLRenderingContext | null;
+  audio: Record<string, Function>;
   getImports(): {
     gl: Record<string, Function>;
     raylib: Record<string, Function>;
+    audio: Record<string, Function>;
     wasi_snapshot_preview1: Record<string, Function>;
   };
   setMemory(mem: WebAssembly.Memory): void;
@@ -50,6 +55,18 @@ export function createWasiImports(
   getMemory: () => WebAssembly.Memory,
   options?: { print?: (text: string) => void; printErr?: (text: string) => void }
 ): Record<string, Function>;
+
+export function createAudioImports(
+  getMemory: () => WebAssembly.Memory,
+  options?: RaylibHostOptions
+): Record<string, Function>;
+
+export function createAudioReceiver(options?: object): {
+  handleMessage(msg: any): void;
+  getContext(): AudioContext | null;
+  resume(): Promise<void>;
+  getState(): string;
+};
 
 export function createRaylibHost(options?: RaylibHostOptions): RaylibHostInstance;
 

@@ -92,9 +92,11 @@
         <option value="core_basic_window.wasm">core_basic_window.wasm</option>
         <option value="shapes_basic_shapes.wasm">shapes_basic_shapes.wasm</option>
         <option value="core_input_keys.wasm">core_input_keys.wasm</option>
+        <option value="audio_sound_loading.wasm">audio_sound_loading.wasm</option>
       </select>
       <button id="start-btn">Start / Restart</button>
       <span>FPS: <span id="fps">--</span></span>
+      <span id="audio-badge" class="badge badge-warn" style="margin-bottom: 0; cursor: pointer;" title="Click to unlock Web Audio">Audio: Initializing...</span>
     </div>
 
     <div id="canvas-wrapper">
@@ -105,7 +107,7 @@
   </div>
 
   <script type="module">
-    import { createRaylibHost } from '../dist/raylib-host.js';
+    import { createRaylibHost, createAudioReceiver } from '../dist/raylib-host.js';
 
     const canvas = document.getElementById('raylib-canvas');
     const startBtn = document.getElementById('start-btn');
@@ -113,6 +115,27 @@
     const terminal = document.getElementById('terminal');
     const fpsElem = document.getElementById('fps');
     const badge = document.getElementById('isolation-badge');
+    const audioBadge = document.getElementById('audio-badge');
+    const audioReceiver = createAudioReceiver();
+
+    function updateAudioBadge() {
+      const state = audioReceiver.getState();
+      if (state === 'running') {
+        audioBadge.textContent = 'Audio: 🔊 Active';
+        audioBadge.className = 'badge badge-ok';
+      } else if (state === 'suspended') {
+        audioBadge.textContent = 'Audio: 🔇 Click to enable';
+        audioBadge.className = 'badge badge-warn';
+      } else {
+        audioBadge.textContent = `Audio: ${state}`;
+      }
+    }
+
+    const unlockAudio = () => {
+      audioReceiver.resume().then(updateAudioBadge).catch(() => {});
+    };
+
+    audioBadge.addEventListener('click', unlockAudio);
 
     function log(msg, color = '#cdd6f4') {
       const line = document.createElement('div');
@@ -151,6 +174,13 @@
       oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
       newCanvas.focus();
 
+      newCanvas.addEventListener('pointerdown', () => {
+        newCanvas.focus();
+        unlockAudio();
+      });
+      window.addEventListener('keydown', unlockAudio);
+      window.addEventListener('pointerdown', unlockAudio);
+
       if (hasSAB) {
         // Run in Web Worker with SharedArrayBuffer and zero-copy ImageBitmap presentation
         const ctx = newCanvas.getContext('bitmaprenderer');
@@ -171,12 +201,18 @@
             log(`Status: ${data.status}`, '#a6e3a1');
           } else if (data.type === 'error') {
             log(`Error: ${data.error}`, '#f38ba8');
+          } else if (data.type && data.type.startsWith('audio_')) {
+            audioReceiver.handleMessage(data);
+            if (data.type === 'audio_play') {
+              log(`[Audio] Playing sound (voice ${data.voiceId})`, '#a6e3a1');
+            }
+            updateAudioBadge();
           }
         };
 
-        // Forward DOM input to SharedArrayBuffer
+        // Forward DOM input to SharedArrayBuffer, listening on window for keyboard
         const hostInputSync = createRaylibHost({ sharedBuffer, width: 800, height: 450 });
-        hostInputSync.input.attachListeners(newCanvas);
+        hostInputSync.input.attachListeners(newCanvas, window);
 
         activeWorker.postMessage({
           wasmUrl: wasmFile,

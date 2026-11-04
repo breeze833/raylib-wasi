@@ -37,7 +37,37 @@ test('libraylib.a exports all standard Raylib symbols', () => {
     'GetTime',
     'WaitTime',
     'rlglInit',
-    'rlglClose'
+    'rlglClose',
+    'InitAudioDevice',
+    'CloseAudioDevice',
+    'IsAudioDeviceReady',
+    'SetMasterVolume',
+    'GetMasterVolume',
+    'LoadWave',
+    'LoadWaveFromMemory',
+    'IsWaveValid',
+    'UnloadWave',
+    'LoadSound',
+    'LoadSoundFromWave',
+    'PlaySound',
+    'StopSound',
+    'PauseSound',
+    'ResumeSound',
+    'IsSoundPlaying',
+    'SetSoundVolume',
+    'SetSoundPitch',
+    'SetSoundPan',
+    'UnloadSound',
+    'LoadMusicStream',
+    'PlayMusicStream',
+    'UpdateMusicStream',
+    'StopMusicStream',
+    'UnloadMusicStream',
+    'LoadAudioStream',
+    'UpdateAudioStream',
+    'PlayAudioStream',
+    'StopAudioStream',
+    'UnloadAudioStream'
   ];
 
   for (const sym of requiredSymbols) {
@@ -50,7 +80,8 @@ test('Example wasm binaries import only allowed namespaces', () => {
   const examples = [
     'core_basic_window.wasm',
     'shapes_basic_shapes.wasm',
-    'core_input_keys.wasm'
+    'core_input_keys.wasm',
+    'audio_sound_loading.wasm'
   ];
 
   const allowedModules = new Set(['gl', 'raylib', 'wasi_snapshot_preview1']);
@@ -104,7 +135,8 @@ test('All example wasm binaries run and exit cleanly via raylib-host.js', async 
   const examples = [
     'core_basic_window.wasm',
     'shapes_basic_shapes.wasm',
-    'core_input_keys.wasm'
+    'core_input_keys.wasm',
+    'audio_sound_loading.wasm'
   ];
 
   for (const ex of examples) {

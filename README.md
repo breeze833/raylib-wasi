@@ -15,42 +15,48 @@
 - **Zero-Diff Upstream Maintenance**: Upstream `raysan5/raylib` is tracked as an untouched Git submodule at release tag `5.5`. Not a single line of Raylib's source is patched.
 - **Raylib 5.5 `PLATFORM_CUSTOM` Architecture**: Implemented via a clean custom platform adapter (`src/rcore_wasi.c`) and WebGL / GLES 2.0 bindings (`src/gl_wasi.c`, `src/gl_wasi.h`, `src/GLES2/`).
 - **Synchronous Web Worker Execution (`wasm-c-ide` integration)**: Standard Raylib game loops (`while (!WindowShouldClose())`) run directly inside Web Workers without freezing the browser UI, using `SharedArrayBuffer` and `Atomics.wait()` for frame pacing (`SetTargetFPS(60)`) and synchronous keyboard/mouse input handling.
-- **Zero-Dependency Host Bridge**: Standalone vanilla ES module runtime (`dist/raylib-host.js`, ~45 KB) supplying `"gl"`, `"raylib"`, and `"wasi_snapshot_preview1"` namespaces to `WebAssembly.instantiate`.
-- **Virtual Filesystem Ready (`@breeze833/raylib-wasi/headers`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs without external network requests.
+- **Zero-Dependency Host Bridge**: Standalone vanilla ES module runtime (`dist/raylib-host.js`) supplying `"gl"`, `"raylib"`, `"audio"`, and `"wasi_snapshot_preview1"` namespaces to `WebAssembly.instantiate`.
+- **Hardware-Decoupled Web Audio Subsystem**: Full Raylib audio API (`InitAudioDevice`, `Sound`, `Wave`, `Music`, `AudioStream`) implemented via `src/raudio_wasi.c` and Web Audio API (`AudioContext`). Because Web Audio runs on its own dedicated hardware thread, audio playback remains crystal-clear and immune to single-thread frame pacing fluctuations.
+- **Virtual Filesystem Ready (`dist/headers.js`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs (such as `wasm-c-ide`) without external network requests.
 - **Injectable Input Coordinator**: Supports sharing an external `InputCoordinator` (such as `canvas-wasi`'s coordinator) over the standard 512-byte `SharedArrayBuffer` layout.
-- **Zero-Binary Repository Policy**: Neither compiled binary `.a` archives nor upstream header copies are tracked in Git; binaries are published on GitHub Releases and headers are generated at build time.
+- **Zero-Binary Repository Policy**: Neither compiled binary `.a` archives nor upstream header copies are tracked in Git; distributions are published exclusively on GitHub Releases and headers are generated at build time.
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-+-------------------------------------------------------------------------+
-| Browser / Web Worker Host (e.g., wasm-c-ide runtime.worker.js / xterm)  |
-|                                                                         |
-|  +-------------------------------------------------------------------+  |
-|  | raylib-host.js (JavaScript Runtime Bridge)                        |  |
-|  | - WebGL ES 2.0 State Machine & Drawing Commands                   |  |
-|  | - SharedArrayBuffer Input State Sync (Keyboard bitset, Mouse X/Y) |  |
-|  | - Frame Pacing (Atomics.wait frame delay for SetTargetFPS)        |  |
-|  +-----------------------------------+-------------------------------+  |
-+--------------------------------------|----------------------------------+
-                                       | (Wasm Imports: gl / raylib / wasi)
-+--------------------------------------v----------------------------------+
-| User Executable (game.wasm compiled for wasm32-wasi)                    |
-|                                                                         |
-|  +-------------------------------------------------------------------+  |
-|  | User Game Code (main.c, #include "raylib.h")                      |  |
-|  +-----------------------------------+-------------------------------+  |
-|                                      |                                  |
-|  +-----------------------------------v-------------------------------+  |
-|  | libraylib.a (compiled with -DPLATFORM_CUSTOM)                     |  |
-|  | - rshapes.o, rtextures.o, rtext.o, rmodels.o, utils.o             |  |
-|  | - rcore.o (rlgl built-in via RLGL_IMPLEMENTATION)                 |  |
-|  | - rcore_wasi.o (Custom Platform: InitPlatform, PollInputEvents)   |  |
-|  | - gl_wasi.o (GLES2 C wrappers & Wasm extern imports)             |  |
-|  +-------------------------------------------------------------------+  |
-+-------------------------------------------------------------------------+
++-------------------------------------------------------------------------------+
+| Browser Host (Main Thread & Web Worker, e.g. wasm-c-ide runtime.worker.js)   |
+|                                                                               |
+|  +-------------------------------------------------------------------------+  |
+|  | raylib-host.js (JavaScript Runtime Bridge)                              |  |
+|  | - WebGL ES 2.0 State Machine & Drawing Commands                         |  |
+|  | - SharedArrayBuffer Input State Sync (Keyboard bitset, Mouse X/Y)       |  |
+|  | - Frame Pacing (Atomics.wait frame delay for SetTargetFPS)              |  |
+|  | - Web Audio API Engine & Handles (createAudioImports / AudioReceiver)   |  |
+|  |   * Hardware-decoupled AudioContext & Gain/Pan/Voice nodes              |  |
+|  |   * PCM buffer decoding & streaming audio chunk queueing                |  |
+|  +------------------------------------+------------------------------------+  |
++---------------------------------------|---------------------------------------+
+                                        | (Wasm Imports: gl / raylib / wasi)
++---------------------------------------v---------------------------------------+
+| User Executable (game.wasm compiled for wasm32-wasi)                          |
+|                                                                               |
+|  +-------------------------------------------------------------------------+  |
+|  | User Game Code (main.c, #include "raylib.h")                            |  |
+|  +------------------------------------+------------------------------------+  |
+|                                       |                                       |
+|  +------------------------------------v------------------------------------+  |
+|  | libraylib.a (compiled with -DPLATFORM_CUSTOM)                           |  |
+|  | - rshapes.o, rtextures.o, rtext.o, rmodels.o, utils.o                   |  |
+|  | - rcore.o (rlgl built-in via RLGL_IMPLEMENTATION)                       |  |
+|  | - rcore_wasi.o (Custom Platform: InitPlatform, PollInputEvents)         |  |
+|  | - gl_wasi.o (GLES2 C wrappers & Wasm extern imports)                   |  |
+|  | - raudio_wasi.o (Raylib Audio API: Sound, Wave, Music, AudioStream,     |  |
+|  |                  dr_wav/dr_mp3/stb_vorbis/dr_flac/qoa decoders)         |  |
+|  +-------------------------------------------------------------------------+  |
++-------------------------------------------------------------------------------+
 ```
 
 ---
@@ -68,6 +74,7 @@
 │   ├── rcore_wasi.c           # Raylib PLATFORM_CUSTOM implementation for WASI
 │   ├── gl_wasi.h              # Minimal OpenGL ES 2.0 declarations & constants for Wasm
 │   ├── gl_wasi.c              # GLES2 C wrappers (glGetString, logs) and import bindings
+│   ├── raudio_wasi.c          # Dedicated Raylib audio API implementation for WASI Preview 1
 │   ├── GLES2/
 │   │   ├── gl2.h              # Forwarding header to ../gl_wasi.h for zero-diff rlgl.h support
 │   │   └── gl2ext.h           # Forwarding header to ../gl_wasi.h
@@ -75,15 +82,17 @@
 │       ├── index.js           # Host bridge entry point
 │       ├── gl-context.js      # WebGL state machine and handle tables
 │       ├── input.js           # SharedArrayBuffer keyboard & mouse event synchronization
+│       ├── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
 │       └── wasi.js            # Standard WASI snapshot preview 1 runtime
 ├── examples/
 │   ├── core_basic_window.c    # Minimal window & text example
 │   ├── shapes_basic_shapes.c  # 2D shapes rendering example
 │   ├── core_input_keys.c      # Interactive keyboard/mouse movement example
+│   ├── audio_sound_loading.c  # Interactive procedural wave synthesis & audio playback demo
 │   ├── index.html             # Browser test harness
 │   └── worker.js              # Web Worker runtime harness
 ├── test/
-│   ├── host.test.js           # Unit tests for WebGL dispatcher and handle tables
+│   ├── host.test.js           # Unit tests for WebGL, Web Audio, and handle tables
 │   └── symbols.test.js        # Validates exported/imported symbols in libraylib.a
 └── dist/                      # Packaged release output
     ├── include/               # raylib.h, raymath.h, rlgl.h (copied on build)
@@ -129,6 +138,7 @@ Generates:
 - `examples/core_basic_window.wasm`
 - `examples/shapes_basic_shapes.wasm`
 - `examples/core_input_keys.wasm`
+- `examples/audio_sound_loading.wasm`
 
 ### Run Test Suites
 ```bash
@@ -146,13 +156,13 @@ Generates `dist/raylib-wasi.tar.gz` and `dist/raylib-wasi.zip`.
 
 ## 📦 Downloading & Integrating raylib-wasi into Your Project
 
-### Option 1: Download Precompiled Release Bundle
+### Option 1: Download Precompiled Release Bundle from GitHub Releases (Recommended)
 
-Precompiled archives containing `include/`, `lib/libraylib.a`, and `raylib-host.js` are published on GitHub Releases:
+Precompiled distributions containing `include/`, `lib/libraylib.a`, and `raylib-host.js` are published exclusively on GitHub Releases:
 
 - 👉 **[GitHub Releases Page](https://github.com/breeze833/raylib-wasi/releases)**
 
-To download and extract the latest build directly in your terminal:
+To download and extract the latest release archive directly in your terminal:
 
 ```bash
 # Download and extract the latest tarball
@@ -166,38 +176,24 @@ tar -xzf raylib-wasi.tar.gz
 # │   └── rlgl.h
 # ├── lib/
 # │   └── libraylib.a
+# ├── headers.js
+# ├── headers.d.ts
 # ├── raylib-host.js
 # └── raylib-host.d.ts
 ```
 
-### Option 2: Install via npm (for Web IDEs & Web Apps)
+### Option 2: Web Applications & In-Browser IDE Integration (e.g. `wasm-c-ide`)
 
-You can install `@breeze833/raylib-wasi` into any Node.js / web project (like `wasm-c-ide`):
-
-**From GitHub repository directly**:
-```bash
-npm install https://github.com/breeze833/raylib-wasi
-```
-*(An automatic zero-dependency `postinstall` script downloads the precompiled `libraylib.a` and headers from GitHub Releases, requiring no local C compiler or Clang toolchain).*
-
-**Or from GitHub Packages**:
-Add to your `.npmrc` (or `~/.npmrc`):
-```ini
-@breeze833:registry=https://npm.pkg.github.com
-```
-Then run:
-```bash
-npm install @breeze833/raylib-wasi
-```
-
-Then import the host runtime bridge and virtual filesystem headers in your JavaScript / TypeScript code:
+For browser applications and in-browser IDEs:
+1. Download `raylib-wasi.tar.gz` from the GitHub Releases page into your web public assets directory.
+2. Import the host runtime bridge and virtual headers directly:
 
 ```javascript
 // Import the host bridge runtime
-import { createRaylibHost, createGLImports, InputCoordinator } from '@breeze833/raylib-wasi';
+import { createRaylibHost, createGLImports, createAudioReceiver, InputCoordinator } from './dist/raylib-host.js';
 
-// Import C headers as string constants (e.g. for VFS mounting)
-import { RAYLIB_H, RAYMATH_H, RLGL_H } from '@breeze833/raylib-wasi/headers';
+// Import C headers as string constants (e.g. for VFS mounting in browser IDEs)
+import { RAYLIB_H, RAYMATH_H, RLGL_H } from './dist/headers.js';
 ```
 
 #### Host Bridge Configuration Options
@@ -218,14 +214,12 @@ const host = createRaylibHost({
   },
   onClose: () => {
     // Notification when game closes or WindowShouldClose() becomes true
+  },
+  onAudioMessage: (msg, transfer) => {
+    // Forward audio events from worker to main-thread createAudioReceiver
   }
 });
 ```
-
-And access the precompiled headers and static library for Wasm compilation at:
-- Header files: `node_modules/@breeze833/raylib-wasi/dist/include/`
-- Static archive: `node_modules/@breeze833/raylib-wasi/dist/lib/libraylib.a`
-- Header string constants: `import { RAYLIB_H, RAYMATH_H, RLGL_H } from '@breeze833/raylib-wasi/headers'`
 
 ### Option 3: Git Submodule (Source Integration)
 

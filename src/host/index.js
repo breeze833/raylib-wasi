@@ -3,8 +3,9 @@
 import { createGLImports } from './gl-context.js';
 import { InputCoordinator } from './input.js';
 import { createWasiImports } from './wasi.js';
+import { createAudioImports, createAudioReceiver } from './audio-context.js';
 
-export { createGLImports, InputCoordinator, createWasiImports };
+export { createGLImports, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver };
 
 export function createRaylibHost(options = {}) {
   let memory = null;
@@ -55,6 +56,7 @@ export function createRaylibHost(options = {}) {
 
   const glImports = gl ? createGLImports(gl, getMemory) : {};
   const wasiImports = createWasiImports(getMemory, options);
+  const audioImports = createAudioImports(getMemory, options);
 
   let lastFpsTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   let frameCount = 0;
@@ -153,12 +155,16 @@ export function createRaylibHost(options = {}) {
     }
   };
 
+  const combinedRaylibImports = Object.assign({}, raylibImports, audioImports);
+
   const host = {
     input,
     gl,
+    audio: audioImports,
     getImports: () => ({
       gl: glImports,
-      raylib: raylibImports,
+      raylib: combinedRaylibImports,
+      audio: audioImports,
       wasi_snapshot_preview1: wasiImports
     }),
     setMemory: (mem) => { memory = mem; },

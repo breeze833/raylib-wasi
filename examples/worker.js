@@ -42,6 +42,13 @@ self.onmessage = async (e) => {
     },
     onClose: () => {
       self.postMessage({ type: 'status', status: 'closed' });
+    },
+    onAudioMessage: (msg, transfer) => {
+      if (transfer && transfer.length > 0) {
+        self.postMessage(msg, transfer);
+      } else {
+        self.postMessage(msg);
+      }
     }
   });
 

@@ -1,13 +1,15 @@
 // host.test.js - Unit tests for raylib-host.js
 import assert from 'node:assert';
 import { test } from 'node:test';
-import { createRaylibHost, createGLImports, InputCoordinator, createWasiImports } from '../dist/raylib-host.js';
+import { createRaylibHost, createGLImports, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver } from '../dist/raylib-host.js';
 
 test('Host Bridge exports validation', () => {
   assert.strictEqual(typeof createRaylibHost, 'function');
   assert.strictEqual(typeof createGLImports, 'function');
   assert.strictEqual(typeof InputCoordinator, 'function');
   assert.strictEqual(typeof createWasiImports, 'function');
+  assert.strictEqual(typeof createAudioImports, 'function');
+  assert.strictEqual(typeof createAudioReceiver, 'function');
 });
 
 test('WebGL Context handle tables and mock dispatch', () => {
@@ -255,3 +257,169 @@ test('createRaylibHost supports input injection, dynamic resize, and onFPS callb
   assert.strictEqual(initedTitle, 'Test Title');
   assert.strictEqual(customInput.shouldClose, false);
 });
+
+test('Web Audio API bridge and handle tables', async () => {
+  const startedSources = [];
+  const stoppedSources = [];
+
+  class MockAudioParam {
+    constructor(val = 1.0) { this.value = val; }
+    setValueAtTime(val) { this.value = val; }
+  }
+
+  class MockGainNode {
+    constructor() {
+      this.gain = new MockAudioParam(1.0);
+    }
+    connect() {}
+    disconnect() {}
+  }
+
+  class MockStereoPannerNode {
+    constructor() {
+      this.pan = new MockAudioParam(0.0);
+      this.context = { currentTime: 0 };
+    }
+    connect() {}
+    disconnect() {}
+  }
+
+  class MockAudioBufferSourceNode {
+    constructor(ctx) {
+      this.ctx = ctx;
+      this.buffer = null;
+      this.loop = false;
+      this.playbackRate = new MockAudioParam(1.0);
+      this.onended = null;
+    }
+    connect() {}
+    disconnect() {}
+    start(time = 0, offset = 0) {
+      startedSources.push({ src: this, time, offset });
+    }
+    stop() {
+      stoppedSources.push(this);
+      if (this.onended) this.onended();
+    }
+  }
+
+  class MockAudioBuffer {
+    constructor(channels, length, sampleRate) {
+      this.numberOfChannels = channels;
+      this.length = length;
+      this.sampleRate = sampleRate;
+      this.duration = length / sampleRate;
+      this._channelData = Array.from({ length: channels }, () => new Float32Array(length));
+    }
+    getChannelData(ch) {
+      return this._channelData[ch];
+    }
+  }
+
+  const mockAudioContext = {
+    currentTime: 0.5,
+    state: 'running',
+    destination: {},
+    createGain: () => new MockGainNode(),
+    createStereoPanner: () => new MockStereoPannerNode(),
+    createBufferSource: function() { return new MockAudioBufferSourceNode(this); },
+    createBuffer: (channels, length, sampleRate) => new MockAudioBuffer(channels, length, sampleRate),
+    resume: async () => {},
+    close: async () => {}
+  };
+
+  const wasmMem = new WebAssembly.Memory({ initial: 2 });
+  const audioImports = createAudioImports(() => wasmMem, {
+    audioContext: mockAudioContext
+  });
+
+  // 1. Lifecycle and Master Volume
+  assert.strictEqual(audioImports.raylib_host_audio_init(), 0);
+  assert.strictEqual(audioImports.raylib_host_audio_is_ready(), 1);
+  audioImports.raylib_host_audio_set_master_volume(0.75);
+  assert.strictEqual(audioImports.raylib_host_audio_get_master_volume(), 0.75);
+
+  // 2. Sound Buffer Creation & Playback
+  // Write 16-bit PCM frames (100 frames, 1 channel) into memory at offset 1000
+  const pcmOffset = 1000;
+  const pcm16 = new Int16Array(wasmMem.buffer, pcmOffset, 100);
+  for (let i = 0; i < 100; i++) pcm16[i] = 16384; // ~0.5 float
+
+  const bufId = audioImports.raylib_host_audio_create_buffer(1, 44100, 16, 100, pcmOffset);
+  assert.ok(bufId > 0, 'Buffer ID must be positive');
+
+  // Play sound
+  const voiceId = audioImports.raylib_host_audio_play(bufId, 0.9, 1.2, 0.5, 0);
+  assert.ok(voiceId > 0, 'Voice ID must be positive');
+  assert.strictEqual(audioImports.raylib_host_audio_is_playing(voiceId), 1);
+  assert.strictEqual(startedSources.length, 1);
+
+  // Set parameters
+  audioImports.raylib_host_audio_set_volume(voiceId, 0.5);
+  audioImports.raylib_host_audio_set_pitch(voiceId, 1.5);
+  audioImports.raylib_host_audio_set_pan(voiceId, 0.2);
+
+  // Pause and resume
+  audioImports.raylib_host_audio_pause(voiceId);
+  assert.strictEqual(audioImports.raylib_host_audio_is_playing(voiceId), 0);
+  audioImports.raylib_host_audio_resume(voiceId);
+  assert.strictEqual(audioImports.raylib_host_audio_is_playing(voiceId), 1);
+
+  // Stop
+  audioImports.raylib_host_audio_stop(voiceId);
+  assert.strictEqual(audioImports.raylib_host_audio_is_playing(voiceId), 0);
+  audioImports.raylib_host_audio_destroy_buffer(bufId);
+
+  // 3. AudioStream Queue
+  const streamId = audioImports.raylib_host_audio_stream_init(1, 44100, 16);
+  assert.ok(streamId > 0, 'Stream ID must be positive');
+
+  audioImports.raylib_host_audio_stream_play(streamId);
+  assert.strictEqual(audioImports.raylib_host_audio_stream_is_playing(streamId), 1);
+
+  audioImports.raylib_host_audio_stream_feed(streamId, pcmOffset, 50);
+  assert.ok(startedSources.length >= 2, 'Stream feed scheduled source node');
+
+  audioImports.raylib_host_audio_stream_pause(streamId);
+  assert.strictEqual(audioImports.raylib_host_audio_stream_is_playing(streamId), 0);
+
+  audioImports.raylib_host_audio_stream_resume(streamId);
+  assert.strictEqual(audioImports.raylib_host_audio_stream_is_playing(streamId), 1);
+
+  audioImports.raylib_host_audio_stream_stop(streamId);
+  assert.strictEqual(audioImports.raylib_host_audio_stream_is_playing(streamId), 0);
+
+  audioImports.raylib_host_audio_stream_destroy(streamId);
+
+  // 4. Close device
+  audioImports.raylib_host_audio_close();
+  assert.strictEqual(audioImports.raylib_host_audio_is_ready(), 0);
+
+  // 5. AudioReceiver
+  const receiver = createAudioReceiver({ audioContext: mockAudioContext });
+  receiver.handleMessage({ type: 'audio_init' });
+  receiver.handleMessage({ type: 'audio_master_volume', volume: 0.8 });
+  const rawPcm = new Int16Array(100).fill(1000).buffer;
+  receiver.handleMessage({
+    type: 'audio_create_buffer',
+    bufferId: 1,
+    channels: 1,
+    sampleRate: 44100,
+    sampleSize: 16,
+    frameCount: 100,
+    data: rawPcm
+  });
+  receiver.handleMessage({
+    type: 'audio_play',
+    voiceId: 1,
+    bufferId: 1,
+    volume: 0.8,
+    pitch: 1.0,
+    pan: 0.5,
+    loop: false
+  });
+  assert.strictEqual(typeof receiver.handleMessage, 'function');
+  assert.strictEqual(receiver.getState(), 'running');
+  await receiver.resume();
+});
+

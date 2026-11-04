@@ -29,13 +29,15 @@ RAYLIB_OBJS = $(BUILD_DIR)/rcore.o \
               $(BUILD_DIR)/utils.o
 
 PLATFORM_OBJS = $(BUILD_DIR)/rcore_wasi.o \
-                $(BUILD_DIR)/gl_wasi.o
+                $(BUILD_DIR)/gl_wasi.o \
+                $(BUILD_DIR)/raudio_wasi.o
 
 ALL_OBJS = $(RAYLIB_OBJS) $(PLATFORM_OBJS)
 
 EXAMPLES = examples/core_basic_window.wasm \
            examples/shapes_basic_shapes.wasm \
-           examples/core_input_keys.wasm
+           examples/core_input_keys.wasm \
+           examples/audio_sound_loading.wasm
 
 .PHONY: all clean headers host test examples package serve
 
@@ -80,7 +82,7 @@ headers: | $(DIST_INC)
 host:
 	$(NODE) scripts/bundle-host.js
 
-test: all
+test: examples
 	$(NODE) --test test/host.test.js
 	$(NODE) --test test/symbols.test.js
 

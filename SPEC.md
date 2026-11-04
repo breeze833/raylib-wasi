@@ -17,33 +17,50 @@
 ## 2. System Architecture
 
 ```
-+-------------------------------------------------------------------------+
-| Browser / Web Worker Host (e.g., wasm-c-ide runtime.worker.js / xterm)  |
-|                                                                         |
-|  +-------------------------------------------------------------------+  |
-|  | raylib-host.js (JavaScript Runtime Bridge)                        |  |
-|  | - WebGL ES 2.0 State Machine & Drawing Commands                   |  |
-|  | - SharedArrayBuffer Input State Sync (Keyboard bitset, Mouse X/Y) |  |
-|  | - Frame Pacing (Atomics.wait frame delay for SetTargetFPS)        |  |
-|  +-----------------------------------+-------------------------------+  |
-+--------------------------------------|----------------------------------+
-                                       | (Wasm Imports: gl / raylib / wasi)
-+--------------------------------------v----------------------------------+
-| User Executable (a.out / game.wasm compiled for wasm32-wasi)            |
-|                                                                         |
-|  +-------------------------------------------------------------------+  |
-|  | User Game Code (main.c, #include "raylib.h")                      |  |
-|  +-----------------------------------+-------------------------------+  |
-|                                      |                                  |
-|  +-----------------------------------v-------------------------------+  |
-|  | libraylib.a (compiled with -DPLATFORM_CUSTOM)                     |  |
-|  | - rshapes.o, rtextures.o, rtext.o, rmodels.o                      |  |
-|  | - rcore.o (rlgl built-in via RLGL_IMPLEMENTATION)                 |  |
-|  | - rcore_wasi.o (Custom Platform: InitPlatform, PollInputEvents)   |  |
-|  | - gl_wasi.o (GLES2 C wrappers & Wasm extern imports)             |  |
-|  +-------------------------------------------------------------------+  |
-+-------------------------------------------------------------------------+
++-------------------------------------------------------------------------------+
+| Browser Host (Main Thread & Web Worker, e.g. wasm-c-ide runtime.worker.js)   |
+|                                                                               |
+|  +-------------------------------------------------------------------------+  |
+|  | raylib-host.js (JavaScript Runtime Bridge)                              |  |
+|  | - WebGL ES 2.0 State Machine & Drawing Commands                         |  |
+|  | - SharedArrayBuffer Input State Sync (Keyboard bitset, Mouse X/Y)       |  |
+|  | - Frame Pacing (Atomics.wait frame delay for SetTargetFPS)              |  |
+|  | - Web Audio API Engine & Handles (createAudioImports / AudioReceiver)   |  |
+|  |   * Hardware-decoupled AudioContext & Gain/Pan/Voice nodes              |  |
+|  |   * PCM buffer decoding & streaming audio chunk queueing                |  |
+|  +------------------------------------+------------------------------------+  |
++---------------------------------------|---------------------------------------+
+                                        | (Wasm Imports: gl / raylib / wasi)
++---------------------------------------v---------------------------------------+
+| User Executable (a.out / game.wasm compiled for wasm32-wasi)                  |
+|                                                                               |
+|  +-------------------------------------------------------------------------+  |
+|  | User Game Code (main.c, #include "raylib.h")                            |  |
+|  +------------------------------------+------------------------------------+  |
+|                                       |                                       |
+|  +------------------------------------v------------------------------------+  |
+|  | libraylib.a (compiled with -DPLATFORM_CUSTOM)                           |  |
+|  | - rshapes.o, rtextures.o, rtext.o, rmodels.o, utils.o                   |  |
+|  | - rcore.o (rlgl built-in via RLGL_IMPLEMENTATION)                       |  |
+|  | - rcore_wasi.o (Custom Platform: InitPlatform, PollInputEvents)         |  |
+|  | - gl_wasi.o (GLES2 C wrappers & Wasm extern imports)                   |  |
+|  | - raudio_wasi.o (Raylib Audio API: Sound, Wave, Music, AudioStream,     |  |
+|  |                  dr_wav/dr_mp3/stb_vorbis/dr_flac/qoa decoders)         |  |
+|  +-------------------------------------------------------------------------+  |
++-------------------------------------------------------------------------------+
 ```
+
+### Architectural Subsystems:
+1. **Graphics & Frame Pacing**:
+   - WebGL 2D/3D rasterization is handled either directly or offscreen via `OffscreenCanvas`.
+   - `Atomics.wait()` on `SharedArrayBuffer` clamps frame intervals to `SetTargetFPS(60)` inside the Wasm execution thread without spinning or wasting CPU cycles.
+2. **Synchronous Input Coordination**:
+   - A 512-byte `SharedArrayBuffer` continuously mirrors mouse coordinates, button bitsets, and keyboard key arrays.
+   - User programs query `IsKeyPressed()`, `IsKeyDown()`, `GetMousePosition()` synchronously with zero latency.
+3. **Hardware-Decoupled Audio Pipeline**:
+   - `src/raudio_wasi.c` fulfills `<raylib.h>` audio contracts in pure C, compiling upstream decoders (`dr_wav`, `dr_mp3`, `stb_vorbis`, `dr_flac`, `qoa`) without POSIX threads or `miniaudio.h`.
+   - Host bindings in `src/host/audio-context.js` (`createAudioImports` / `createAudioReceiver`) bridge sounds and streaming queues to the browser's Web Audio API (`AudioContext`).
+   - Because Web Audio executes on the operating system's dedicated real-time audio thread, audio playback and music streaming remain jitter-free and completely decoupled from Wasm visual frame pacing.
 
 ---
 
@@ -58,7 +75,10 @@
   - `vendor/raylib/src/rtext.c`
   - `vendor/raylib/src/rmodels.c`
   - `vendor/raylib/src/rcore.c` (with `-DPLATFORM_CUSTOM -DGRAPHICS_API_OPENGL_ES2`)
-- Note on Audio: `raudio.c` is omitted from the initial milestones (compiled with audio disabled or stubs), as `miniaudio.h` does not support vanilla `wasm32-wasi` without custom host audio bindings.
+- **Audio Architecture (`src/raudio_wasi.c` & `src/host/audio-context.js`)**:
+  - Upstream `raudio.c` relies on `miniaudio.h`, which depends on POSIX threads (`pthread_create`, `pthread_join`, and `sched_*`) unavailable in single-threaded WASI Preview 1.
+  - `raylib-wasi` provides a dedicated WASI audio platform (`src/raudio_wasi.c`) that directly satisfies `<raylib.h>` audio declarations (`InitAudioDevice`, `Sound`, `Wave`, `Music`, `AudioStream`) while reusing upstream decoders (`dr_wav.h`, `dr_mp3.h`, `stb_vorbis.c`, `dr_flac.h`, `qoa.h`).
+  - Audio device, buffer playback, and streaming are bridged to the browser's hardware-backed Web Audio API via host imports (`raylib_host_audio_*`) implemented in `src/host/audio-context.js`.
 - Note on `rlgl`: `rlgl.h` is a header-only component whose implementation is compiled directly inside `rcore.o` (`#define RLGL_IMPLEMENTATION`).
 
 ### 3.2 Platform Implementation (`src/rcore_wasi.c`)
@@ -102,13 +122,14 @@ Raylib's `PLATFORM_CUSTOM` requires implementing standard hooks defined in `rcor
 ### 3.4 Host Runtime Bridge (`dist/raylib-host.js`) & Module Exports
 A standalone, zero-dependency ES module providing import namespaces to `WebAssembly.instantiate`:
 - **Module Exports (`package.json`)**:
-  - `.` / `./host`: `dist/raylib-host.js` exporting `createRaylibHost`, `createGLImports`, `InputCoordinator`, `createWasiImports`.
+  - `.` / `./host`: `dist/raylib-host.js` exporting `createRaylibHost`, `createGLImports`, `InputCoordinator`, `createWasiImports`, `createAudioImports`, `createAudioReceiver`.
   - `./headers`: `dist/headers.js` exporting `RAYLIB_H`, `RAYMATH_H`, and `RLGL_H` as JavaScript string constants for virtual filesystems.
   - `./include/*`: Direct file access to C headers (`dist/include/raylib.h`, etc.).
   - `./lib/*`: Precompiled static archives when installed with binary assets.
 - **Module Namespaces**:
   - `"gl"`: WebGL ES 2.0 bindings and handle table translations.
-  - `"raylib"`: Window lifecycle (`raylib_host_init_window`, `raylib_host_close_window`), screen query functions, and timing (`raylib_host_sleep`).
+  - `"raylib"`: Window lifecycle (`raylib_host_init_window`, `raylib_host_close_window`), screen query functions, timing (`raylib_host_sleep`), and audio device/sound/stream host imports (`raylib_host_audio_*`).
+  - `"audio"`: Optional dedicated namespace mirror for audio host imports.
   - `"wasi_snapshot_preview1"`: Standard WASI runtime environment.
 - **WebGL Dispatcher**:
   - Maps integer IDs (1, 2, 3...) to WebGL objects (`WebGLBuffer`, `WebGLTexture`, `WebGLProgram`, `WebGLShader`).
@@ -139,7 +160,8 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
 - **Archiver**: `llvm-ar rcs dist/lib/libraylib.a ...`
 - **Zero-Binary & Generated Headers Distribution Policy**:
   - `libraylib.a` is compiled in GitHub Actions CI and released as downloadable release assets on GitHub Releases (`raylib-wasi.tar.gz`), ensuring zero binary Wasm files are committed to the Git repository.
-  - Public C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are copied to `dist/include/` and generated as string constants in `dist/headers.js` from `vendor/raylib/src/` at build time by `scripts/bundle-host.js`. They are excluded from Git tracking (`.gitignore`), but included in published npm module distributions via `package.json`'s `files` list.
+  - Public C headers (`raylib.h`, `raymath.h`, `rlgl.h`) are copied to `dist/include/` and generated as string constants in `dist/headers.js` from `vendor/raylib/src/` at build time by `scripts/bundle-host.js`.
+  - **Release Page Distribution Only**: Distributions are published exclusively via the GitHub Releases page. GitHub Packages and npm registry distributions are not maintained.
 - **Output Bundle (`dist/`)**:
   ```
   dist/
@@ -162,10 +184,11 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
 | Test Case | Expected Behavior |
 |---|---|
 | **Clean Submodule Build** | Submodule clone (`5.5`) + `make` builds `libraylib.a` without modifying any file in `vendor/raylib/`. |
-| **Archive Symbols Verification** | `llvm-nm dist/lib/libraylib.a` contains all standard Raylib symbols (`InitWindow`, `BeginDrawing`, `DrawRectangle`, `EndDrawing`, etc.). |
+| **Archive Symbols Verification** | `llvm-nm dist/lib/libraylib.a` contains all standard Raylib symbols (`InitWindow`, `BeginDrawing`, `DrawRectangle`, `EndDrawing`, `InitAudioDevice`, `PlaySound`, etc.). |
 | **No Unresolved Internal Symbols** | Object files link into sample binaries with only WASI (`wasi_snapshot_preview1`) and platform (`gl`, `raylib`) imports. |
 | **Sample Binary: Basic Window** | `examples/core_basic_window.c` compiles to `.wasm` and runs in worker displaying a 60 FPS canvas with text. |
 | **FPS Clamping (SetTargetFPS)** | `SetTargetFPS(60)` maintains ~60 FPS via `Atomics.wait()` without consuming 100% CPU on worker thread. |
 | **Sample Binary: Input Handling** | Moving mouse and pressing arrow keys moves shapes on canvas in real-time. |
 | **Sample Binary: 2D Shapes & Text** | Rectangles, circles, lines, and custom fonts render accurately without WebGL errors. |
+| **Sample Binary: Audio Playback** | `examples/audio_sound_loading.c` synthesizes wave and plays audible sound through Web Audio API on click or Spacebar. |
 | **Clean Loop Exit** | Closing window or pressing Escape causes `WindowShouldClose()` to return true and program exits with code 0. |

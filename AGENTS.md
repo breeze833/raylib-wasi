@@ -25,31 +25,40 @@ You are an autonomous senior systems, graphics, and WebAssembly engineer impleme
 ├── SPEC.md                    # Technical specification & architectural ground truth
 ├── AGENTS.md                  # Agent operating protocols (this file)
 ├── README.md                  # Project overview, build instructions, and integration guide
-├── Makefile                   # Main build script (compiles libraylib.a and examples)
+├── Makefile                   # Main build script (compiles libraylib.a, host, examples)
 ├── vendor/
 │   └── raylib/                # Clean Git submodule pointing to raysan5/raylib (tag 5.5)
 ├── src/
 │   ├── rcore_wasi.c           # Raylib PLATFORM_CUSTOM implementation for WASI
 │   ├── gl_wasi.h              # Minimal OpenGL ES 2.0 declarations & constants for Wasm
 │   ├── gl_wasi.c              # GLES2 C wrappers (glGetString, logs) and import bindings
+│   ├── raudio_wasi.c          # Dedicated Raylib audio API implementation for WASI Preview 1
 │   ├── GLES2/
 │   │   ├── gl2.h              # Forwarding header to ../gl_wasi.h for zero-diff rlgl.h support
 │   │   └── gl2ext.h           # Forwarding header to ../gl_wasi.h
 │   └── host/
 │       ├── index.js           # raylib-host.js entry point (exports host bridge)
 │       ├── gl-context.js      # WebGL state machine and handle table (buffers, textures, shaders)
-│       └── input.js           # SharedArrayBuffer keyboard & mouse event synchronization
+│       ├── input.js           # SharedArrayBuffer keyboard & mouse event synchronization
+│       ├── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
+│       └── wasi.js            # WASI Snapshot Preview 1 minimal host runtime
 ├── examples/
 │   ├── core_basic_window.c    # Minimal window & text example
 │   ├── shapes_basic_shapes.c  # 2D shapes example (rectangles, circles, lines)
-│   └── core_input_keys.c      # Interactive keyboard movement example
+│   ├── core_input_keys.c      # Interactive keyboard movement example
+│   ├── audio_sound_loading.c  # Interactive procedural wave synthesis & audio playback demo
+│   ├── index.html             # Browser test harness
+│   └── worker.js              # Web Worker runtime harness
 ├── test/
 │   ├── symbols.test.js        # Validates exported/imported symbols in libraylib.a
-│   └── host.test.js           # Unit tests for WebGL dispatcher and handle tables
+│   └── host.test.js           # Unit tests for WebGL, Web Audio, and handle tables
 └── dist/                      # Packaged release output
-    ├── include/               # raylib.h, raymath.h, rlgl.h
-    ├── lib/                   # libraylib.a
-    └── raylib-host.js         # Bundled standalone host runtime bridge
+    ├── include/               # raylib.h, raymath.h, rlgl.h (copied on build)
+    ├── lib/                   # libraylib.a (CI release asset)
+    ├── headers.js             # Exported C header string constants (RAYLIB_H, etc.)
+    ├── headers.d.ts           # Type declarations for headers.js
+    ├── raylib-host.js         # Bundled standalone host runtime bridge
+    └── raylib-host.d.ts       # Type declarations for raylib-host.js
 ```
 
 ---
@@ -100,7 +109,19 @@ Proceed milestone-by-milestone:
   - Installs `wasi-sdk` / LLVM / `lld` / `wasi-libc`.
   - Builds `libraylib.a` and `raylib-host.js`.
   - Runs symbol and host tests.
-  - Packages and releases `raylib-wasi.tar.gz` and `raylib-wasi.zip` containing `include/`, `lib/`, and `raylib-host.js`.
+  - Packages and publishes `raylib-wasi.tar.gz` and `raylib-wasi.zip` on **GitHub Releases**.
+- **Distribution Policy**: Distributions are published exclusively via the repository Release page. No GitHub Packages or npm registry publishing is maintained.
+
+### Milestone 6: Web Audio Subsystem Integration
+- Implement `src/raudio_wasi.c`:
+  - Replaces upstream `raudio.c` to remove POSIX thread and `miniaudio.h` dependencies.
+  - Implements complete Raylib Audio API (`InitAudioDevice`, `Sound`, `Wave`, `Music`, `AudioStream`).
+  - Directly reuses upstream header-only audio decoders (`dr_wav.h`, `dr_mp3.h`, `stb_vorbis.c`, `dr_flac.h`, `qoa.h`).
+- Implement `src/host/audio-context.js`:
+  - Hardware-decoupled Web Audio API bridge (`AudioContext`, `GainNode`, `StereoPannerNode`, `AudioBufferSourceNode`).
+  - Supports direct execution in main thread and proxying via `createAudioReceiver` when executing inside worker threads where `AudioContext` is absent or restricted by autoplay policies.
+  - Streaming queues for jitter-free chunked music and procedural stream playback.
+- Verification demo: `examples/audio_sound_loading.c` synthesizing procedural bell wave with interactive volume and pitch adjustment.
 
 ---
 
@@ -115,4 +136,6 @@ Before marking any task complete:
 | **Clean OpenGL Dispatch** | Calling `BeginDrawing()`, `ClearBackground()`, `DrawRectangle()`, `EndDrawing()` generates valid WebGL calls without WebGL warnings or errors in browser console. |
 | **FPS Clamping** | `SetTargetFPS(60)` maintains approximately 60 frames per second without consuming 100% CPU on worker thread. |
 | **Key & Mouse Tracking** | `IsKeyDown()` and `GetMousePosition()` immediately reflect canvas interactions. |
+| **Web Audio Playback** | `InitAudioDevice()`, `LoadSoundFromWave()`, and `PlaySound()` trigger audible Web Audio playback without thread blocking or frame jitter. |
 | **Standalone Dist Size** | `libraylib.a` is stripped of debug bloat, keeping artifact compact for web IDE consumption. |
+| **Release Packaging** | `make package` produces `dist/raylib-wasi.tar.gz` containing `include/`, `lib/libraylib.a`, and `raylib-host.js` for GitHub Releases. |
