@@ -20,6 +20,7 @@
 - **Virtual Filesystem Ready (`dist/headers.js`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs (such as `wasm-c-ide`) without external network requests.
 - **Self-Contained GUI Support**: Includes `raygui.h` immediate-mode GUI widgets out of the box for building toolbars, buttons, sliders, and controls in pure C.
 - **Injectable Input Coordinator**: Supports sharing an external `InputCoordinator` (such as `canvas-wasi`'s coordinator) over the standard 512-byte `SharedArrayBuffer` layout.
+- **Standalone Reference Host & Contract Specification**: Authoritative host function contract in `docs/HOST_FUNCTIONS.md` and a headless reference runner in `examples/host-reference.js` with integrated self-verification.
 - **Zero-Binary Repository Policy**: Neither compiled binary `.a` archives nor upstream header copies are tracked in Git; distributions are published exclusively on GitHub Releases and headers are generated at build time.
 
 ---
@@ -210,7 +211,7 @@ For browser applications and in-browser IDEs:
 
 ```javascript
 // Import the host bridge runtime
-import { createRaylibHost, createGLImports, createAudioReceiver, InputCoordinator } from './dist/raylib-host.js';
+import { createRaylibHost, RaylibReferenceHost, createMockGL, createGLImports, createAudioReceiver, InputCoordinator } from './dist/raylib-host.js';
 
 // Import C headers as string constants (e.g. for VFS mounting in browser IDEs)
 import { RAYLIB_H, RAYMATH_H, RLGL_H, RAYGUI_H } from './dist/headers.js';

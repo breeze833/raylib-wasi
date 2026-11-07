@@ -10,6 +10,7 @@
     ".": "./dist/raylib-host.js",
     "./host": "./dist/raylib-host.js",
     "./headers": "./dist/headers.js",
+    "./reference": "./examples/host-reference.js",
     "./include/*": "./dist/include/*",
     "./lib/*": "./dist/lib/*"
   },
@@ -18,7 +19,12 @@
     "dist/lib",
     "dist/raylib-host.js",
     "dist/raylib-host.d.ts",
+    "dist/headers.js",
+    "dist/headers.d.ts",
+    "examples/host-reference.js",
+    "docs/HOST_FUNCTIONS.md",
     "scripts/postinstall.js",
+    "scripts/setup-wasi-sdk.js",
     "README.md",
     "LICENSE"
   ],
