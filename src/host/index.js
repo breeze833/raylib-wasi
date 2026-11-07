@@ -1,11 +1,11 @@
 // index.js - raylib-wasi Host Bridge entry point
 
-import { createGLImports } from './gl-context.js';
+import { createGLImports, createMockGL } from './gl-context.js';
 import { InputCoordinator } from './input.js';
 import { createWasiImports } from './wasi.js';
 import { createAudioImports, createAudioReceiver } from './audio-context.js';
 
-export { createGLImports, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver };
+export { createGLImports, createMockGL, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver };
 
 export function createRaylibHost(options = {}) {
   let memory = null;
@@ -187,4 +187,144 @@ export function createRaylibHost(options = {}) {
   return host;
 }
 
+export class RaylibReferenceHost {
+  constructor(options = {}) {
+    this.options = Object.assign({}, options);
+    this.stats = {
+      framesRendered: 0,
+      drawCalls: 0,
+      audioBuffersCreated: 0,
+      audioVoicesPlayed: 0,
+      audioStreamsInitialized: 0,
+      audioStreamChunksFed: 0
+    };
+
+    this.stdoutLines = [];
+    this.stderrLines = [];
+    this.exitCode = null;
+
+    this.glStats = {};
+    this.gl = this.options.gl || createMockGL(this.glStats);
+
+    this.audioMessages = [];
+    const userAudioMsgHandler = this.options.onAudioMessage;
+    const trackingAudioMsgHandler = (msg, transfer) => {
+      this.audioMessages.push(msg);
+      if (msg.type === 'audio_create_buffer') this.stats.audioBuffersCreated++;
+      if (msg.type === 'audio_play') this.stats.audioVoicesPlayed++;
+      if (msg.type === 'audio_stream_init') this.stats.audioStreamsInitialized++;
+      if (msg.type === 'audio_stream_feed') this.stats.audioStreamChunksFed++;
+      if (userAudioMsgHandler) userAudioMsgHandler(msg, transfer);
+    };
+
+    this.host = createRaylibHost({
+      gl: this.gl,
+      width: this.options.width || 800,
+      height: this.options.height || 450,
+      sharedBuffer: this.options.sharedBuffer || null,
+      onAudioMessage: trackingAudioMsgHandler,
+      print: (text) => {
+        this.stdoutLines.push(text);
+        if (this.options.print) this.options.print(text);
+      },
+      printErr: (text) => {
+        this.stderrLines.push(text);
+        if (this.options.printErr) this.options.printErr(text);
+      },
+      onExit: (code) => {
+        this.exitCode = code;
+        if (this.options.onExit) this.options.onExit(code);
+      },
+      onFrame: (bitmap) => {
+        this.stats.framesRendered++;
+        this.stats.drawCalls = (this.glStats.drawArraysCount || 0) + (this.glStats.drawElementsCount || 0);
+
+        if (this.options.onFrame) {
+          this.options.onFrame(this.stats.framesRendered, this);
+        }
+
+        if (this.options.maxFrames && this.stats.framesRendered >= this.options.maxFrames) {
+          this.requestClose();
+        }
+      }
+    });
+
+    this.input = this.host.input;
+  }
+
+  pressKey(keyCode) {
+    if (keyCode >= 0 && keyCode < 512) {
+      const word = Math.floor(keyCode / 32);
+      const bit = keyCode % 32;
+      this.input.keysDown[word] |= (1 << bit);
+      this.input.keyPressedQueue.push(keyCode);
+      this.input.updateSharedState();
+    }
+  }
+
+  releaseKey(keyCode) {
+    if (keyCode >= 0 && keyCode < 512) {
+      const word = Math.floor(keyCode / 32);
+      const bit = keyCode % 32;
+      this.input.keysDown[word] &= ~(1 << bit);
+      this.input.updateSharedState();
+    }
+  }
+
+  setMousePosition(x, y) {
+    this.input.mouseX = x;
+    this.input.mouseY = y;
+    this.input.updateSharedState();
+  }
+
+  pressMouseButton(button = 0) {
+    this.input.mouseButtons |= (1 << button);
+    this.input.updateSharedState();
+  }
+
+  releaseMouseButton(button = 0) {
+    this.input.mouseButtons &= ~(1 << button);
+    this.input.updateSharedState();
+  }
+
+  requestClose() {
+    this.input.shouldClose = true;
+    this.input.updateSharedState();
+  }
+
+  async run(wasmBinary, runtimeOptions = {}) {
+    if (typeof wasmBinary === 'string') {
+      const { readFileSync } = await import('node:fs');
+      wasmBinary = readFileSync(wasmBinary);
+    }
+    if (runtimeOptions.maxFrames) {
+      this.options.maxFrames = runtimeOptions.maxFrames;
+    }
+
+    try {
+      await this.host.run(wasmBinary);
+      if (this.exitCode === null) {
+        this.exitCode = 0;
+      }
+    } catch (err) {
+      if (typeof err.exitCode === 'number') {
+        this.exitCode = err.exitCode;
+      } else {
+        throw err;
+      }
+    }
+
+    return {
+      exitCode: this.exitCode,
+      framesRendered: this.stats.framesRendered,
+      drawCalls: this.stats.drawCalls,
+      clearCount: this.glStats.clearCount || 0,
+      stdoutLines: this.stdoutLines,
+      stderrLines: this.stderrLines,
+      audioMessages: this.audioMessages
+    };
+  }
+}
+
+export { RaylibReferenceHost };
 export default createRaylibHost;

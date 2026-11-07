@@ -43,7 +43,7 @@ ${stripImportsAndExports(audioSrc)}
 
 ${stripImportsAndExports(indexSrc)}
 
-export { createGLImports, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver, createRaylibHost };
+export { createGLImports, createMockGL, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver, createRaylibHost, RaylibReferenceHost };
 export default createRaylibHost;
 `;
 

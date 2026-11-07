@@ -100,6 +100,7 @@ host:
 test: examples
 	$(NODE) --test test/host.test.js
 	$(NODE) --test test/symbols.test.js
+	$(NODE) examples/host-reference.js
 
 package: all
 	tar -czf $(DIST_DIR)/raylib-wasi.tar.gz -C $(DIST_DIR) include lib raylib-host.js raylib-host.d.ts

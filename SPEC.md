@@ -8,9 +8,11 @@
 - **Zero-Diff Upstream Maintenance**: Upstream `raysan5/raylib` is tracked as an untouched Git submodule. Not a single line of Raylib's core source code is modified or patched.
 - **Raylib 5.5 `PLATFORM_CUSTOM` Architecture**: Leverage Raylib's official platform-split architecture by providing a custom platform adapter (`rcore_wasi.c`).
 - **Synchronous Web Worker Execution (wasm-c-ide integration)**: Enable standard Raylib loops (`while (!WindowShouldClose())`) to run inside a Web Worker (such as an xterm terminal emulator process in `wasm-c-ide`) without freezing the browser, using `SharedArrayBuffer` and `Atomics.wait()` for frame pacing and input synchronization.
-- **Dual Deliverables**:
+- **Standalone Component Provider Specification & Reference Host**: Authoritative host function contract documented in `docs/HOST_FUNCTIONS.md` and verified by a zero-dependency reference runner in `examples/host-reference.js`.
+- **Deliverables**:
   1. `libraylib.a` + standard headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) for compilation into user binaries.
-  2. `raylib-host.js`: A lightweight, zero-dependency vanilla ES module host bridge supplying WebGL and input imports to `WebAssembly.instantiate` in browser or worker contexts.
+  2. `raylib-host.js`: A lightweight, zero-dependency vanilla ES module host bridge supplying WebGL, input, audio, and WASI imports to `WebAssembly.instantiate` in browser or worker contexts.
+  3. `examples/host-reference.js`: Standalone reference host runner and test harness for headless verification and external integrator reference.
 
 ---
 
@@ -119,13 +121,18 @@ Raylib's `PLATFORM_CUSTOM` requires implementing standard hooks defined in `rcor
     Calls requiring pointer and string translation across the Wasm/JS boundary (such as `glGetString`, `glGetShaderInfoLog`, `glGetProgramInfoLog`, `glShaderSource`, and `glGetUniformLocation`) use C wrapper functions in `src/gl_wasi.c`.
     - For example, `glGetString(GL_EXTENSIONS)` or `glGetString(GL_VERSION)` uses static C buffers populated by concise host imports, ensuring zero pointer confusion and eliminating the need for complex JavaScript-side Wasm heap allocators.
 
-### 3.4 Host Runtime Bridge (`dist/raylib-host.js`) & Module Exports
+### 3.4 Host Runtime Bridge (`dist/raylib-host.js`), Reference Runner & Module Exports
 A standalone, zero-dependency ES module providing import namespaces to `WebAssembly.instantiate`:
 - **Module Exports (`package.json`)**:
-  - `.` / `./host`: `dist/raylib-host.js` exporting `createRaylibHost`, `createGLImports`, `InputCoordinator`, `createWasiImports`, `createAudioImports`, `createAudioReceiver`.
+  - `.` / `./host`: `dist/raylib-host.js` exporting `createRaylibHost`, `RaylibReferenceHost`, `createMockGL`, `createGLImports`, `InputCoordinator`, `createWasiImports`, `createAudioImports`, `createAudioReceiver`.
   - `./headers`: `dist/headers.js` exporting `RAYLIB_H`, `RAYMATH_H`, and `RLGL_H` as JavaScript string constants for virtual filesystems.
   - `./include/*`: Direct file access to C headers (`dist/include/raylib.h`, etc.).
   - `./lib/*`: Precompiled static archives when installed with binary assets.
+- **Reference Host Runner (`examples/host-reference.js`)**:
+  - Standalone zero-dependency reference runner implementing 100% of the host function contracts documented in `docs/HOST_FUNCTIONS.md`.
+  - Provides `createMockGL` for headless execution in Node.js or environments without physical WebGL contexts.
+  - Implements integrated self-verification executing all example binaries and asserting clean lifecycle transitions and exit codes.
+- **Authoritative Contract Specification**: Detailed function signatures, calling conventions, DataView memory layouts, and handle management rules are maintained in `docs/HOST_FUNCTIONS.md`.
 - **Module Namespaces**:
   - `"gl"`: WebGL ES 2.0 bindings and handle table translations.
   - `"raylib"`: Window lifecycle (`raylib_host_init_window`, `raylib_host_close_window`), screen query functions, timing (`raylib_host_sleep`), and audio device/sound/stream host imports (`raylib_host_audio_*`).
@@ -193,4 +200,5 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
 | **Sample Binary: 2D Shapes & Text** | Rectangles, circles, lines, and custom fonts render accurately without WebGL errors. |
 | **Sample Binary: Audio Playback** | `examples/audio_sound_loading.c` synthesizes wave and plays audible sound through Web Audio API on click or Spacebar. |
 | **Sample Binary: GUI Controls** | `examples/gui_controls.c` uses `raygui.h` (`GuiButton`, `GuiSlider`, `GuiCheckBox`, etc.) and renders interactive widgets cleanly. |
+| **Reference Host Verification** | `node examples/host-reference.js` executes all example binaries against `createMockGL` and asserts 100% contract compliance with clean exits. |
 | **Clean Loop Exit** | Closing window or pressing Escape causes `WindowShouldClose()` to return true and program exits with code 0. |

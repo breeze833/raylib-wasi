@@ -1,15 +1,17 @@
 // host.test.js - Unit tests for raylib-host.js
 import assert from 'node:assert';
 import { test } from 'node:test';
-import { createRaylibHost, createGLImports, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver } from '../dist/raylib-host.js';
+import { createRaylibHost, createGLImports, createMockGL, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver, RaylibReferenceHost } from '../dist/raylib-host.js';
 
 test('Host Bridge exports validation', () => {
   assert.strictEqual(typeof createRaylibHost, 'function');
   assert.strictEqual(typeof createGLImports, 'function');
+  assert.strictEqual(typeof createMockGL, 'function');
   assert.strictEqual(typeof InputCoordinator, 'function');
   assert.strictEqual(typeof createWasiImports, 'function');
   assert.strictEqual(typeof createAudioImports, 'function');
   assert.strictEqual(typeof createAudioReceiver, 'function');
+  assert.strictEqual(typeof RaylibReferenceHost, 'function');
 });
 
 test('WebGL Context handle tables and mock dispatch', () => {

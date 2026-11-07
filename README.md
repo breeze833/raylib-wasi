@@ -69,6 +69,8 @@
 ├── SPEC.md                    # Technical specification & architectural ground truth
 ├── AGENTS.md                  # Development guidelines & milestone roadmap
 ├── Makefile                   # Main build script (compiles libraylib.a, host, examples)
+├── docs/
+│   └── HOST_FUNCTIONS.md      # Authoritative Wasm host function contract & specifications
 ├── vendor/
 │   └── raylib/                # Clean Git submodule tracking raysan5/raylib (tag 5.5)
 ├── src/
@@ -86,6 +88,7 @@
 │       ├── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
 │       └── wasi.js            # Standard WASI snapshot preview 1 runtime
 ├── examples/
+│   ├── host-reference.js      # Production-grade reference runner with self-verification
 │   ├── core_basic_window.c    # Minimal window & text example
 │   ├── shapes_basic_shapes.c  # 2D shapes rendering example
 │   ├── core_input_keys.c      # Interactive keyboard/mouse movement example
@@ -146,8 +149,21 @@ Generates:
 ### Run Test Suites
 ```bash
 make test
+# or: npm test
 ```
-Runs both unit test suites (`host.test.js` and `symbols.test.js`).
+Runs:
+1. `test/host.test.js`: WebGL, WASI Preview 1, and Web Audio API unit tests.
+2. `test/symbols.test.js`: Static library export validation & Wasm import namespace checks.
+3. `examples/host-reference.js`: End-to-end headless reference host self-verification against all example binaries.
+
+You can also run the standalone reference host runner directly on any Wasm binary:
+```bash
+node examples/host-reference.js examples/core_basic_window.wasm 60
+# or: npm run host-reference
+```
+
+### Host Function Specification
+The authoritative Wasm host-assisted function specification and binary contract are documented in **[`docs/HOST_FUNCTIONS.md`](docs/HOST_FUNCTIONS.md)**.
 
 ### Create Release Archives
 ```bash

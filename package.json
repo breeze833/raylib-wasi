@@ -26,7 +26,8 @@
     "postinstall": "node scripts/postinstall.js",
     "toolchain": "node scripts/setup-wasi-sdk.js",
     "build": "make all",
-    "test": "node --test test/*.js",
+    "test": "node --test test/*.js && node examples/host-reference.js",
+    "host-reference": "node examples/host-reference.js",
     "package": "make package"
   },
   "keywords": [

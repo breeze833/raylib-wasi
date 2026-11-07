@@ -51,6 +51,27 @@ export function createGLImports(
   getMemory: () => WebAssembly.Memory
 ): Record<string, Function>;
 
+export function createMockGL(stats?: Record<string, any>): any;
+
+export class RaylibReferenceHost {
+  constructor(options?: RaylibHostOptions & { maxFrames?: number });
+  pressKey(keyCode: number): void;
+  releaseKey(keyCode: number): void;
+  setMousePosition(x: number, y: number): void;
+  pressMouseButton(button?: number): void;
+  releaseMouseButton(button?: number): void;
+  requestClose(): void;
+  run(wasmBinary: BufferSource | string, runtimeOptions?: { maxFrames?: number }): Promise<{
+    exitCode: number;
+    framesRendered: number;
+    drawCalls: number;
+    clearCount: number;
+    stdoutLines: string[];
+    stderrLines: string[];
+    audioMessages: any[];
+  }>;
+}
+
 export function createWasiImports(
   getMemory: () => WebAssembly.Memory,
   options?: { print?: (text: string) => void; printErr?: (text: string) => void }

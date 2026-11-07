@@ -26,6 +26,8 @@ You are an autonomous senior systems, graphics, and WebAssembly engineer impleme
 ├── AGENTS.md                  # Agent operating protocols (this file)
 ├── README.md                  # Project overview, build instructions, and integration guide
 ├── Makefile                   # Main build script (compiles libraylib.a, host, examples)
+├── docs/
+│   └── HOST_FUNCTIONS.md      # Authoritative Wasm host function contract & specifications
 ├── vendor/
 │   └── raylib/                # Clean Git submodule pointing to raysan5/raylib (tag 5.5)
 ├── src/
@@ -43,6 +45,7 @@ You are an autonomous senior systems, graphics, and WebAssembly engineer impleme
 │       ├── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
 │       └── wasi.js            # WASI Snapshot Preview 1 minimal host runtime
 ├── examples/
+│   ├── host-reference.js      # Production-grade reference runner with self-verification
 │   ├── core_basic_window.c    # Minimal window & text example
 │   ├── shapes_basic_shapes.c  # 2D shapes example (rectangles, circles, lines)
 │   ├── core_input_keys.c      # Interactive keyboard movement example
@@ -125,6 +128,13 @@ Proceed milestone-by-milestone:
   - Streaming queues for jitter-free chunked music and procedural stream playback.
 - Verification demo: `examples/audio_sound_loading.c` synthesizing procedural bell wave with interactive volume and pitch adjustment.
 
+### Milestone 7: Host Function Specifications & Standalone Reference Host
+- Author `docs/HOST_FUNCTIONS.md` enumerating the GLES2 state machine, audio playback, and input buffer contracts across modules `"gl"`, `"raylib"`, and `"wasi_snapshot_preview1"`.
+- Implement `examples/host-reference.js`:
+  - Production-grade, zero-dependency reference runner providing `RaylibReferenceHost` and `createMockGL`.
+  - Implements integrated self-verification executing all example binaries and verifying assertions.
+- Integrate reference runner into `npm test` and `make test`.
+
 ---
 
 ## 4. Verification & Testing Checklist
@@ -140,4 +150,5 @@ Before marking any task complete:
 | **Key & Mouse Tracking** | `IsKeyDown()` and `GetMousePosition()` immediately reflect canvas interactions. |
 | **Web Audio Playback** | `InitAudioDevice()`, `LoadSoundFromWave()`, and `PlaySound()` trigger audible Web Audio playback without thread blocking or frame jitter. |
 | **Standalone Dist Size** | `libraylib.a` is stripped of debug bloat, keeping artifact compact for web IDE consumption. |
+| **Host Reference Verification** | `node examples/host-reference.js` verifies all examples in pure Node.js with zero contract violations. |
 | **Release Packaging** | `make package` produces `dist/raylib-wasi.tar.gz` containing `include/`, `lib/libraylib.a`, and `raylib-host.js` for GitHub Releases. |
