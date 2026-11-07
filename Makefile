@@ -1,8 +1,17 @@
 # Makefile for raylib-wasi
 # Standalone Raylib 5.5 port to wasm32-wasi without Emscripten
 
-CC = clang
-AR = llvm-ar
+# Toolchain configuration (auto-detects local .wasi-sdk or respects WASI_SDK_PATH)
+WASI_SDK_PATH ?= $(firstword $(wildcard $(CURDIR)/.wasi-sdk /opt/wasi-sdk))
+
+ifneq ($(wildcard $(WASI_SDK_PATH)/bin/clang),)
+  CC = $(WASI_SDK_PATH)/bin/clang
+  AR = $(WASI_SDK_PATH)/bin/llvm-ar
+else
+  CC ?= clang
+  AR ?= llvm-ar
+endif
+
 NODE ?= node
 TARGET ?= wasm32-wasi
 
@@ -41,7 +50,10 @@ EXAMPLES = examples/core_basic_window.wasm \
            examples/audio_sound_loading.wasm \
            examples/gui_controls.wasm
 
-.PHONY: all clean headers host test examples package serve
+.PHONY: all clean headers host test examples package serve toolchain setup-sdk
+
+toolchain setup-sdk:
+	$(NODE) scripts/setup-wasi-sdk.js
 
 all: $(DIST_LIB)/libraylib.a headers host
 

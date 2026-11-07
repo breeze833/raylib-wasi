@@ -110,15 +110,15 @@
 ## 🚀 Quickstart & Build Instructions
 
 ### Prerequisites
-- **LLVM / Clang 19+** (or `wasi-sdk`)
-- **wasi-libc** (installed at `/usr/include/wasm32-wasi` and `/usr/lib/wasm32-wasi`)
-- **llvm-ar**
 - **Node.js 20+**
+- (Optional) Host **LLVM / Clang 19+** and **wasi-libc** if not using the self-contained toolchain
 
-On Debian / Ubuntu:
+### Self-Contained Toolchain Setup (`wasi-sdk v29`)
+The build process includes a self-contained toolchain installer that downloads and configures pre-built `wasi-sdk v29` (including Clang, llvm-ar, and wasi-libc sysroot) into `.wasi-sdk/` for Linux (x86_64, arm64) and macOS (Apple Silicon, Intel):
+
 ```bash
-sudo apt-get update
-sudo apt-get install -y clang llvm lld wasi-libc zip
+make toolchain
+# or: npm run toolchain
 ```
 
 ### Build Everything

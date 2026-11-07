@@ -9,3 +9,5 @@ dist/*.tgz
 dist/headers.js
 dist/headers.d.ts
 .DS_Store
+.wasi-sdk/
+.wasi-sdk*.tar.gz

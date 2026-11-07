@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
+    "toolchain": "node scripts/setup-wasi-sdk.js",
     "build": "make all",
     "test": "node --test test/*.js",
     "package": "make package"
