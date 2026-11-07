@@ -31,7 +31,9 @@ jobs:
           sudo apt-get install -y zip
 
       - name: Set up wasi-sdk toolchain
-        run: make toolchain
+        run: |
+          make toolchain
+          echo "$GITHUB_WORKSPACE/.wasi-sdk/bin" >> $GITHUB_PATH
 
       - name: Build raylib-wasi library and bundle
         run: make all

@@ -13,7 +13,57 @@ const libPath = path.join(rootDir, 'dist', 'lib', 'libraylib.a');
 test('libraylib.a exports all standard Raylib symbols', () => {
   assert.ok(fs.existsSync(libPath), 'dist/lib/libraylib.a must exist');
 
-  const nmOutput = execSync(`llvm-nm --defined-only "${libPath}"`, { encoding: 'utf-8' });
+  function getArchiveSymbols(archivePath) {
+    const wasiSdkNm = path.join(rootDir, '.wasi-sdk', 'bin', 'llvm-nm');
+    const candidates = [
+      process.env.NM,
+      fs.existsSync(wasiSdkNm) ? wasiSdkNm : null,
+      'llvm-nm',
+      'nm'
+    ].filter(Boolean);
+
+    for (const nmTool of candidates) {
+      try {
+        const nmOutput = execSync(`"${nmTool}" --defined-only "${archivePath}"`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore']
+        });
+        const symSet = new Set();
+        for (const line of nmOutput.split('\n')) {
+          const match = line.match(/\b(?:T|D)\s+(\w+)\b/);
+          if (match) symSet.add(match[1]);
+        }
+        if (symSet.size > 0) return symSet;
+      } catch (_) {}
+    }
+
+    // Pure JavaScript fallback: parse GNU/BSD ar symbol table directly
+    const buf = fs.readFileSync(archivePath);
+    if (buf.subarray(0, 8).toString('ascii') === '!<arch>\n') {
+      const size = parseInt(buf.subarray(8 + 48, 8 + 58).toString('ascii').trim(), 10);
+      if (!isNaN(size) && size > 4) {
+        const content = buf.subarray(68, 68 + size);
+        const numSyms = content.readUInt32BE(0);
+        let offset = 4 + numSyms * 4;
+        const symSet = new Set();
+        while (offset < content.length) {
+          let end = offset;
+          while (end < content.length && content[end] !== 0) end++;
+          if (end > offset) {
+            symSet.add(content.subarray(offset, end).toString('utf8'));
+          }
+          offset = end + 1;
+        }
+        if (symSet.size > 0) return symSet;
+      }
+    }
+
+    return new Set();
+  }
+
+  const definedSymbols = getArchiveSymbols(libPath);
+  assert.ok(definedSymbols.size > 0, 'Must extract defined symbols from libraylib.a');
+
   const requiredSymbols = [
     'InitWindow',
     'CloseWindow',
@@ -71,8 +121,7 @@ test('libraylib.a exports all standard Raylib symbols', () => {
   ];
 
   for (const sym of requiredSymbols) {
-    const regex = new RegExp(`\\b(T|D)\\s+${sym}\\b`);
-    assert.ok(regex.test(nmOutput), `Symbol ${sym} must be defined in libraylib.a`);
+    assert.ok(definedSymbols.has(sym), `Symbol ${sym} must be defined in libraylib.a`);
   }
 });
 

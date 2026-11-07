@@ -7,6 +7,7 @@ WASI_SDK_PATH ?= $(firstword $(wildcard $(CURDIR)/.wasi-sdk /opt/wasi-sdk))
 ifneq ($(wildcard $(WASI_SDK_PATH)/bin/clang),)
   CC = $(WASI_SDK_PATH)/bin/clang
   AR = $(WASI_SDK_PATH)/bin/llvm-ar
+  export PATH := $(WASI_SDK_PATH)/bin:$(PATH)
 else
   CC ?= clang
   AR ?= llvm-ar
