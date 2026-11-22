@@ -29,6 +29,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y zip
+          npm install
 
       - name: Set up wasi-sdk toolchain
         run: |
@@ -60,37 +61,13 @@ jobs:
             dist/lib/
             dist/*.tgz
 
-      - name: Reset Rolling Tag 'latest'
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          gh release delete latest --cleanup-tag --yes || true
-          git push origin :refs/tags/latest 2>/dev/null || true
-          git tag -d latest 2>/dev/null || true
-          sleep 2
-          git tag -f latest
-          git push --force origin latest
-
-      - name: Publish Latest Pre-release (Push to main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish Versioned Release (v* Tag)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          target_commitish: ${{ github.sha }}
-          name: "raylib-wasi latest (rolling build)"
-          body: |
-            Automated continuous build from commit `${{ github.sha }}` on `main`.
-
-            ### 📦 Downloadable Assets:
-            - **`raylib-wasi-5.5.0.tgz`**: Ready-to-use npm package tarball for fast zero-submodule `npm install`
-            - **`raylib-wasi.tar.gz`**: Precompiled distribution archive (`include/`, `lib/libraylib.a`, and `raylib-host.js`)
-            - **`raylib-wasi.zip`**: ZIP archive of the distribution bundle
-            - **`raylib-host.js`**: Standalone vanilla ES module host runtime bridge
-            - **`raylib-host.d.ts`**: TypeScript definitions
-          prerelease: true
+          name: "raylib-wasi ${{ github.ref_name }}"
+          generate_release_notes: true
+          make_latest: "true"
           files: |
             dist/raylib-wasi.tar.gz
             dist/raylib-wasi.zip
@@ -100,12 +77,39 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish Versioned Release (Git Tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Rolling Update 'latest' Git Tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "${{ github.sha }}"
+          git push --force origin refs/tags/latest
+
+      - name: Remove Stale Rolling 'latest' Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes || true
+
+      - name: Publish Rolling 'latest' Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: "raylib-wasi ${{ github.ref_name }}"
-          generate_release_notes: true
+          tag_name: latest
+          name: "Latest (${{ github.ref_name }})"
+          body: |
+            Rolling release pointing to `${{ github.ref_name }}` (`${{ github.sha }}`).
+
+            ### 📦 Downloadable Assets:
+            - **`raylib-wasi-*.tgz`**: Ready-to-use npm package tarball for fast zero-submodule `npm install`
+            - **`raylib-wasi.tar.gz`**: Precompiled distribution archive (`include/`, `lib/libraylib.a`, and `raylib-host.js`)
+            - **`raylib-wasi.zip`**: ZIP archive of the distribution bundle
+            - **`raylib-host.js`**: Standalone vanilla ES module host runtime bridge
+            - **`raylib-host.d.ts`**: TypeScript definitions
+          make_latest: "false"
           files: |
             dist/raylib-wasi.tar.gz
             dist/raylib-wasi.zip

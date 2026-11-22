@@ -11,7 +11,7 @@
 - **Standalone Component Provider Specification & Reference Host**: Authoritative host function contract documented in `docs/HOST_FUNCTIONS.md` and verified by a zero-dependency reference runner in `examples/host-reference.js`.
 - **Deliverables**:
   1. `libraylib.a` + standard headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) for compilation into user binaries.
-  2. `raylib-host.js`: A lightweight, zero-dependency vanilla ES module host bridge supplying WebGL, input, audio, and WASI imports to `WebAssembly.instantiate` in browser or worker contexts.
+  2. `src/host/` & `dist/raylib-host.js`: Vanilla ES module host bridge supplying WebGL, input, and audio bindings, delegating WASI Preview 1 hosting to the standalone [`wasi-host`](https://github.com/breeze833/wasi-host) package (or an externally injected `wasiHost` / `wasiImports`).
   3. `examples/host-reference.js`: Standalone reference host runner and test harness for headless verification and external integrator reference.
 
 ---
@@ -121,15 +121,25 @@ Raylib's `PLATFORM_CUSTOM` requires implementing standard hooks defined in `rcor
     Calls requiring pointer and string translation across the Wasm/JS boundary (such as `glGetString`, `glGetShaderInfoLog`, `glGetProgramInfoLog`, `glShaderSource`, and `glGetUniformLocation`) use C wrapper functions in `src/gl_wasi.c`.
     - For example, `glGetString(GL_EXTENSIONS)` or `glGetString(GL_VERSION)` uses static C buffers populated by concise host imports, ensuring zero pointer confusion and eliminating the need for complex JavaScript-side Wasm heap allocators.
 
-### 3.4 Host Runtime Bridge (`dist/raylib-host.js`), Reference Runner & Module Exports
-A standalone, zero-dependency ES module providing import namespaces to `WebAssembly.instantiate`:
+### 3.4 Host Runtime Bridge (`src/host/index.js` & `dist/raylib-host.js`), Reference Runner & Module Exports
+An ES module host bridge focused on Raylib's graphics, input, and Web Audio subsystems while delegating WASI Preview 1 execution to [`wasi-host`](https://github.com/breeze833/wasi-host):
 - **Module Exports (`package.json`)**:
-  - `.` / `./host`: `dist/raylib-host.js` exporting `createRaylibHost`, `RaylibReferenceHost`, `createMockGL`, `createGLImports`, `InputCoordinator`, `createWasiImports`, `createAudioImports`, `createAudioReceiver`.
-  - `./headers`: `dist/headers.js` exporting `RAYLIB_H`, `RAYMATH_H`, and `RLGL_H` as JavaScript string constants for virtual filesystems.
+  - `.` / `./host`: `./src/host/index.js` (with `wasi-host` as a runtime dependency so npm/bundler consumers share a single deduplicated `wasi-host` instance), exporting `createRaylibHost`, `RaylibReferenceHost`, `createMockGL`, `createGLImports`, `InputCoordinator`, `createWasiImports`, `createAudioImports`, `createAudioReceiver`.
+  - `./headers`: `dist/headers.js` exporting `RAYLIB_H`, `RAYMATH_H`, `RLGL_H`, and `RAYGUI_H` as JavaScript string constants for virtual filesystems.
   - `./include/*`: Direct file access to C headers (`dist/include/raylib.h`, etc.).
   - `./lib/*`: Precompiled static archives when installed with binary assets.
+- **Standalone Release Bundle (`dist/raylib-host.js`)**:
+  - `scripts/bundle-host.js` generates a self-contained single-file `dist/raylib-host.js` (incorporating `wasi-host/src/*` alongside `src/host/*` with zero duplicated WASI source in `src/host/`) for standalone GitHub Release downloads and zero-bundler browser harnesses (`examples/index.html`, `examples/worker.js`).
+- **WASI Preview 1 Delegation & External Injection**:
+  - Eliminates the legacy duplicate `src/host/wasi.js` stub.
+  - `createRaylibHost(options)` accepts:
+    - `options.wasiHost`: An external `WasiHost` instance (e.g., from `wasm-c-ide`'s `runtime.worker.js` with `OverlayVFS`, `SharedSysroot`, and `stdin-wasi`). When provided, `setMemory`/`setInstance` bind memory on `options.wasiHost` and `getImports()` exposes its WASI imports.
+    - `options.wasiImports`: A raw `wasi_snapshot_preview1` syscall map provided by the caller.
+    - **Default fallback**: When neither is provided, instantiates `new WasiHost(...)` from `wasi-host`, bridging `print`/`printErr` (line-buffered stdout/stderr), `stdin`, `vfs`, `cwd`, `argv`, `environ`, `preopens`, and `onExit`.
+  - `createWasiImports(getMemory, options)` is preserved as a thin compatibility wrapper over `WasiHost` (attaching `err.exitCode = err.code` on `ProcExit` and invoking `options.onExit`).
+  - `host.run(wasmBinary)` catches `ProcExit` cleanly, invoking `options.onExit(code)` and preserving `err.exitCode` for callers when non-zero (or returning cleanly on exit code `0`).
 - **Reference Host Runner (`examples/host-reference.js`)**:
-  - Standalone zero-dependency reference runner implementing 100% of the host function contracts documented in `docs/HOST_FUNCTIONS.md`.
+  - Standalone reference runner implementing 100% of the host function contracts documented in `docs/HOST_FUNCTIONS.md`.
   - Provides `createMockGL` for headless execution in Node.js or environments without physical WebGL contexts.
   - Implements integrated self-verification executing all example binaries and asserting clean lifecycle transitions and exit codes.
 - **Authoritative Contract Specification**: Detailed function signatures, calling conventions, DataView memory layouts, and handle management rules are maintained in `docs/HOST_FUNCTIONS.md`.
@@ -137,7 +147,7 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
   - `"gl"`: WebGL ES 2.0 bindings and handle table translations.
   - `"raylib"`: Window lifecycle (`raylib_host_init_window`, `raylib_host_close_window`), screen query functions, timing (`raylib_host_sleep`), and audio device/sound/stream host imports (`raylib_host_audio_*`).
   - `"audio"`: Optional dedicated namespace mirror for audio host imports.
-  - `"wasi_snapshot_preview1"`: Standard WASI runtime environment.
+  - `"wasi_snapshot_preview1"` / `"wasi_unstable"`: Standard WASI runtime environment delegated to `wasi-host` or injected host.
 - **WebGL Dispatcher**:
   - Maps integer IDs (1, 2, 3...) to WebGL objects (`WebGLBuffer`, `WebGLTexture`, `WebGLProgram`, `WebGLShader`).
   - Supports rendering on `HTMLCanvasElement` or worker-based `OffscreenCanvas`.
@@ -165,6 +175,10 @@ A standalone, zero-dependency ES module providing import namespaces to `WebAssem
   -Isrc
   ```
 - **Archiver**: `llvm-ar rcs dist/lib/libraylib.a ...`
+- **Package Version & Dependencies**:
+  - Package version: `5.5.0-build1` (upstream Raylib `5.5`, packaged as `raylib-wasi-5.5.0-build1.tgz`).
+  - Runtime npm dependency: `"wasi-host"` (`https://github.com/breeze833/wasi-host/releases/download/latest/wasi-host-0.1.0.tgz`).
+  - CI (`.github/workflows/build.yml`) runs `npm install` before `make all`, `make examples`, `make test`, and `make package`.
 - **Zero-Binary & Generated Headers Distribution Policy**:
   - `libraylib.a` is compiled in GitHub Actions CI and released as downloadable release assets on GitHub Releases (`raylib-wasi.tar.gz`), ensuring zero binary Wasm files are committed to the Git repository.
   - Public C headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) are copied to `dist/include/` and generated as string constants in `dist/headers.js` from `vendor/raylib/` at build time by `scripts/bundle-host.js`.

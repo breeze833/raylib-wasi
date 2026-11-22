@@ -1,9 +1,11 @@
-// bundle-host.js - Bundles src/host/*.js into a single standalone ES module dist/raylib-host.js without npm dependencies
+// bundle-host.js - Bundles src/host/*.js and installed wasi-host into standalone dist/raylib-host.js
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 const hostDir = path.join(__dirname, '..', 'src', 'host');
 const distDir = path.join(__dirname, '..', 'dist');
@@ -12,38 +14,69 @@ if (!fs.existsSync(distDir)) {
   fs.mkdirSync(distDir, { recursive: true });
 }
 
+// Resolve installed wasi-host package source files for standalone release bundle
+const wasiHostSrcDir = path.dirname(fileURLToPath(import.meta.resolve('wasi-host')));
+const wasiConstantsSrc = fs.readFileSync(path.join(wasiHostSrcDir, 'constants.js'), 'utf-8');
+const wasiVfsAdapterSrc = fs.readFileSync(path.join(wasiHostSrcDir, 'vfs-adapter.js'), 'utf-8');
+const wasiHostCoreSrc = fs.readFileSync(path.join(wasiHostSrcDir, 'wasi-host.js'), 'utf-8');
+
 const glContextSrc = fs.readFileSync(path.join(hostDir, 'gl-context.js'), 'utf-8');
 const inputSrc = fs.readFileSync(path.join(hostDir, 'input.js'), 'utf-8');
-const wasiSrc = fs.readFileSync(path.join(hostDir, 'wasi.js'), 'utf-8');
 const audioSrc = fs.readFileSync(path.join(hostDir, 'audio-context.js'), 'utf-8');
 const indexSrc = fs.readFileSync(path.join(hostDir, 'index.js'), 'utf-8');
 
-// Strip export declarations from inner modules and assemble single standalone ES module
+// Strip local import/export statements when assembling single standalone ES module
 function stripImportsAndExports(src) {
   return src
-    .replace(/^import\s+.*?;\s*$/gm, '')
+    .replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];\s*$/gm, '')
+    .replace(/^export\s+\*\s+from\s+['"][^'"]+['"];\s*$/gm, '')
     .replace(/^export\s+(const|let|var|function|class)/gm, '$1')
-    .replace(/^export\s+\{.*?\};?\s*$/gm, '')
+    .replace(/^export\s+\{[\s\S]*?\};?\s*$/gm, '')
     .replace(/^export\s+default\s+.*?;?\s*$/gm, '');
 }
 
+// Avoid duplicate top-level constant names across concatenated modules
+function deduplicateTopLevel(src, renames = []) {
+  let out = src;
+  for (const [from, to] of renames) {
+    out = out.replace(new RegExp(`\\b${from}\\b`, 'g'), to);
+  }
+  return out;
+}
+
+const cleanWasiVfs = deduplicateTopLevel(stripImportsAndExports(wasiVfsAdapterSrc), [
+  ['textEncoder', 'wasiAdapterTextEncoder'],
+]);
+const cleanWasiCore = deduplicateTopLevel(stripImportsAndExports(wasiHostCoreSrc), [
+  ['textEncoder', 'wasiCoreTextEncoder'],
+  ['textDecoder', 'wasiCoreTextDecoder'],
+  ['HAS_SAB', 'WASI_HAS_SAB'],
+]);
+const cleanIndex = deduplicateTopLevel(stripImportsAndExports(indexSrc), [
+  ['HAS_SAB', 'RAYLIB_HAS_SAB'],
+]);
+
 const bundleContent = `/**
  * raylib-wasi Standalone Host Runtime Bridge
- * Zero-dependency vanilla ES module for WebGL, input sync & WASI execution
+ * Vanilla ES module for WebGL, input sync, Web Audio & WASI execution (powered by wasi-host)
  * https://github.com/breeze833/raylib-wasi
  */
+
+${stripImportsAndExports(wasiConstantsSrc)}
+
+${cleanWasiVfs}
+
+${cleanWasiCore}
 
 ${stripImportsAndExports(glContextSrc)}
 
 ${stripImportsAndExports(inputSrc)}
 
-${stripImportsAndExports(wasiSrc)}
-
 ${stripImportsAndExports(audioSrc)}
 
-${stripImportsAndExports(indexSrc)}
+${cleanIndex}
 
-export { createGLImports, createMockGL, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver, createRaylibHost, RaylibReferenceHost };
+export { createGLImports, createMockGL, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver, createRaylibHost, RaylibReferenceHost, WasiHost, ProcExit, normalizePath };
 export default createRaylibHost;
 `;
 

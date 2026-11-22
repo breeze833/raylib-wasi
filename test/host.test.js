@@ -427,3 +427,38 @@ test('Web Audio API bridge and handle tables', async () => {
   await receiver.resume();
 });
 
+test('createRaylibHost supports external wasiHost and wasiImports injection', async () => {
+  const { WasiHost } = await import('wasi-host');
+  const { createRaylibHost: createFromSrc } = await import('../src/host/index.js');
+
+  const vfs = new Map([['/workspace/hello.txt', new TextEncoder().encode('ok')]]);
+  const externalWasiHost = new WasiHost({ vfs, cwd: '/workspace', argv: ['demo'] });
+  const raylibHost = createFromSrc({ wasiHost: externalWasiHost });
+
+  assert.strictEqual(raylibHost.wasiHost, externalWasiHost);
+  const mem = new WebAssembly.Memory({ initial: 1 });
+  raylibHost.setMemory(mem);
+  assert.strictEqual(externalWasiHost.mem(), mem);
+  assert.strictEqual(raylibHost.getImports().wasi_snapshot_preview1, raylibHost.getImports().wasi_unstable);
+
+  // Also test raw wasiImports injection
+  const customWasi = { proc_exit: () => {}, custom_marker: () => 99 };
+  const customHost = createFromSrc({ wasiImports: customWasi });
+  assert.strictEqual(customHost.getImports().wasi_snapshot_preview1.custom_marker(), 99);
+});
+
+test('raylib_host_init_window decodes SharedArrayBuffer memory safely', () => {
+  const sharedMem = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const titleBytes = new TextEncoder().encode('SAB Window\0');
+  new Uint8Array(sharedMem.buffer).set(titleBytes, 512);
+
+  let receivedTitle = '';
+  const host = createRaylibHost({
+    canvas: { width: 100, height: 100, transferToImageBitmap: () => ({}) },
+    onInitWindow: (_w, _h, title) => { receivedTitle = title; }
+  });
+  host.setMemory(sharedMem);
+  host.getImports().raylib.raylib_host_init_window(320, 240, 512);
+  assert.strictEqual(receivedTitle, 'SAB Window');
+});
+

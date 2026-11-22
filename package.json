@@ -1,20 +1,24 @@
 {
   "name": "raylib-wasi",
-  "version": "5.5.0",
+  "version": "5.5.0-build1",
   "description": "Standalone Raylib 5.5 port and host runtime bridge for WebAssembly (wasm32-wasi) without Emscripten",
   "type": "module",
-  "main": "./dist/raylib-host.js",
-  "module": "./dist/raylib-host.js",
+  "main": "./src/host/index.js",
+  "module": "./src/host/index.js",
   "types": "./dist/raylib-host.d.ts",
   "exports": {
-    ".": "./dist/raylib-host.js",
-    "./host": "./dist/raylib-host.js",
+    ".": "./src/host/index.js",
+    "./host": "./src/host/index.js",
     "./headers": "./dist/headers.js",
     "./reference": "./examples/host-reference.js",
     "./include/*": "./dist/include/*",
     "./lib/*": "./dist/lib/*"
   },
+  "dependencies": {
+    "wasi-host": "https://github.com/breeze833/wasi-host/releases/download/latest/wasi-host-0.1.0.tgz"
+  },
   "files": [
+    "src/host",
     "dist/include",
     "dist/lib",
     "dist/raylib-host.js",

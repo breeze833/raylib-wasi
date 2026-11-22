@@ -11,3 +11,4 @@ dist/headers.d.ts
 .DS_Store
 .wasi-sdk/
 .wasi-sdk*.tar.gz
+node_modules/

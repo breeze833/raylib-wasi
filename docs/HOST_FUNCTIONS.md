@@ -10,7 +10,7 @@ This document is the authoritative technical specification and binary contract b
 
 1. **`gl`**: Hardware-accelerated OpenGL ES 2.0 / WebGL rasterization, shader compilation, and GPU resource management.
 2. **`raylib`**: Platform lifecycle (windowing, display swap), synchronous input state synchronization, frame pacing, and the hardware-decoupled Web Audio API subsystem.
-3. **`wasi_snapshot_preview1`**: Standard POSIX/WASI Preview 1 system calls (console I/O, monotonic clocks, process termination, environment queries).
+3. **`wasi_snapshot_preview1`** (also aliased as **`wasi_unstable`**): Standard POSIX/WASI Preview 1 system calls (console I/O, virtual filesystem, monotonic clocks, process termination, environment queries), delegated by default to [`wasi-host`](https://github.com/breeze833/wasi-host) or an externally injected `wasiHost` / `wasiImports`.
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -208,31 +208,34 @@ To prevent memory leaks and eliminate complex JavaScript-side Wasm heap allocato
 
 ---
 
-## 6. WASI Preview 1 Subsystem Contract (`wasi_snapshot_preview1` Module)
+## 6. WASI Preview 1 Subsystem Contract (`wasi_snapshot_preview1` / `wasi_unstable`)
 
-Standard WASI system call layer required by `wasi-libc`:
+`raylib-wasi` delegates WASI Preview 1 hosting to [`wasi-host`](https://github.com/breeze833/wasi-host) (`WasiHost`), or to an externally provided `options.wasiHost` / `options.wasiImports` (for example `wasm-c-ide`'s `runtime.worker.js` composing `OverlayVFS` and `stdin-wasi`). When using the built-in `WasiHost` fallback, `src/host/index.js` bridges `print`/`printErr` via line-buffered console loggers and attaches `err.exitCode = err.code` on `ProcExit`.
 
-| Function Name | Wasm Signature | Description & Host Behavior |
+Standard WASI system calls required by `wasi-libc` and Raylib asset/file helpers:
+
+| Function Name | Wasm Signature | Description & Host Behavior (`wasi-host` / External Host) |
 |---|---|---|
-| `proc_exit` | `(code: i32) -> void` | Terminates execution and throws `Error` carrying `exitCode`. |
-| `fd_write` | `(fd: i32, iovs: i32, count: i32, nwritten: i32) -> i32` | Flushes stdout (`fd=1`) and stderr (`fd=2`) chunks line-by-line. Returns `0`. |
-| `clock_time_get` | `(id: i32, precision: i64, timePtr: i32) -> i32` | Returns high-precision monotonic timestamp in nanoseconds. Returns `0`. |
-| `clock_res_get` | `(id: i32, resPtr: i32) -> i32` | Writes clock resolution ($1 \ \mu\text{s}$) to memory. Returns `0`. |
-| `random_get` | `(buf: i32, len: i32) -> i32` | Populates memory with cryptographically secure random bytes. Returns `0`. |
-| `environ_sizes_get`| `(countPtr: i32, bufSizePtr: i32) -> i32` | Returns environment variable count and buffer sizes (defaults to 0). |
-| `environ_get` | `(environ: i32, environBuf: i32) -> i32` | Reads environment variables into buffer. |
-| `args_sizes_get` | `(argcPtr: i32, argvBufSizePtr: i32) -> i32` | Returns CLI arguments count and buffer size. |
-| `args_get` | `(argv: i32, argvBuf: i32) -> i32` | Reads CLI arguments into memory. |
-| `fd_read` | `(fd: i32, iovs: i32, count: i32, nread: i32) -> i32` | Reads from file descriptor (defaults to EOF). |
-| `fd_seek` | `(fd: i32, offset: i64, whence: i32, newOffset: i32) -> i32` | Adjusts file offset. |
-| `fd_close` | `(fd: i32) -> i32` | Closes file descriptor. |
-| `fd_sync` | `(fd: i32) -> i32` | Syncs file descriptor. |
-| `fd_fdstat_get` | `(fd: i32, statPtr: i32) -> i32` | Returns file descriptor status flags (character device for stdio). |
-| `fd_fdstat_set_flags` | `(fd: i32, flags: i32) -> i32` | Sets file descriptor flags. |
-| `fd_prestat_get` | `(fd: i32, buf: i32) -> i32` | Returns `__WASI_ERRNO_BADF` (8) indicating no preopened directories. |
-| `fd_prestat_dir_name` | `(fd: i32, path: i32, len: i32) -> i32` | Returns `__WASI_ERRNO_BADF` (8). |
-| `path_open` | `(...) -> i32` | Returns `__WASI_ERRNO_NOENT` (44) for unopened virtual files. |
-| `path_filestat_get` | `(...) -> i32` | Returns `__WASI_ERRNO_NOENT` (44). |
+| `proc_exit` | `(code: i32) -> void` | Invokes `onExit(code)`, unwinds execution via `ProcExit`, and attaches `exitCode` to the thrown error. |
+| `fd_write` | `(fd: i32, iovs: i32, count: i32, nwritten: i32) -> i32` | Writes stdout (`fd=1`) / stderr (`fd=2`) chunks (line-buffered when using `print`/`printErr`) or writes to opened VFS files and character devices (`/dev/null`). Returns `0` (`ESUCCESS`). |
+| `fd_read` | `(fd: i32, iovs: i32, count: i32, nread: i32) -> i32` | Reads from `stdin` (buffer or streaming callback, defaulting to EOF) or opened VFS files / `/dev/zero` / `/dev/null`. |
+| `fd_pread` / `fd_pwrite` | `(fd: i32, iovs: i32, count: i32, offset: i64, nPtr: i32) -> i32` | Positional file reads/writes without advancing the file descriptor cursor. |
+| `clock_time_get` | `(id: i32, precision: i64, timePtr: i32) -> i32` | Returns realtime or monotonic nanosecond timestamps (`performance.now()` / `Date.now()`). Returns `0`. |
+| `clock_res_get` | `(id: i32, resPtr: i32) -> i32` | Writes clock resolution (`1000` ns / `1 ms` depending on clock) to memory. Returns `0`. |
+| `random_get` | `(buf: i32, len: i32) -> i32` | Populates memory with cryptographically secure random bytes (`crypto.getRandomValues`). Returns `0`. |
+| `environ_sizes_get` | `(countPtr: i32, bufSizePtr: i32) -> i32` | Returns environment variable count and buffer byte size. |
+| `environ_get` | `(environ: i32, environBuf: i32) -> i32` | Writes `KEY=VALUE` environment strings into memory. |
+| `args_sizes_get` | `(argcPtr: i32, argvBufSizePtr: i32) -> i32` | Returns CLI argument count and buffer byte size (defaults to `['raylib']`). |
+| `args_get` | `(argv: i32, argvBuf: i32) -> i32` | Writes CLI argument strings into memory. |
+| `fd_seek` / `fd_tell` | `(fd: i32, ...) -> i32` | Adjusts or queries current file descriptor cursor offset. |
+| `fd_close` / `fd_sync` / `fd_datasync` | `(fd: i32) -> i32` | Closes descriptors and flushes tracked VFS changes (`onFileSync`). |
+| `fd_fdstat_get` / `fd_fdstat_set_flags` | `(fd: i32, ...) -> i32` | Queries filetype/rights/flags (character device for stdio) and updates descriptor flags (such as `FDFLAG_APPEND`). |
+| `fd_filestat_get` / `fd_filestat_set_size` / `fd_filestat_set_times` | `(fd: i32, ...) -> i32` | Queries or updates file metadata, size truncation, and timestamps. |
+| `fd_prestat_get` / `fd_prestat_dir_name` | `(fd: i32, ...) -> i32` | Enumerates configured preopened directories (defaults to `fd=3` `.` -> `cwd` and `fd=4` `/`), returning `EBADF` (`8`) once past the preopen table. |
+| `fd_readdir` | `(fd: i32, buf: i32, bufLen: i32, cookie: i64, usedPtr: i32) -> i32` | Lists directory entries from the mounted VFS. |
+| `path_open` | `(...) -> i32` | Resolves paths relative to preopened directories, supporting read/write/create/truncate/exclusive/directory flags (`O_CREAT`, `O_TRUNC`, `O_EXCL`, `O_DIRECTORY`) against the active VFS (`OverlayVFS`, `Map`, or object). |
+| `path_filestat_get` / `path_create_directory` / `path_unlink_file` / `path_remove_directory` / `path_rename` | `(...) -> i32` | VFS metadata queries, directory creation, unlinking, and renaming (invoking `onFileSync` / `onFileDelete`). |
+| `poll_oneoff` | `(inPtr: i32, outPtr: i32, nsubs: i32, neventsPtr: i32) -> i32` | Handles clock subscriptions (`Atomics.wait` sleep fallback in workers). |
 | `sched_yield` | `() -> i32` | Cooperative task yield. Returns `0`. |
 
 ---

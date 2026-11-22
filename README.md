@@ -15,7 +15,7 @@
 - **Zero-Diff Upstream Maintenance**: Upstream `raysan5/raylib` is tracked as an untouched Git submodule at release tag `5.5`. Not a single line of Raylib's source is patched.
 - **Raylib 5.5 `PLATFORM_CUSTOM` Architecture**: Implemented via a clean custom platform adapter (`src/rcore_wasi.c`) and WebGL / GLES 2.0 bindings (`src/gl_wasi.c`, `src/gl_wasi.h`, `src/GLES2/`).
 - **Synchronous Web Worker Execution (`wasm-c-ide` integration)**: Standard Raylib game loops (`while (!WindowShouldClose())`) run directly inside Web Workers without freezing the browser UI, using `SharedArrayBuffer` and `Atomics.wait()` for frame pacing (`SetTargetFPS(60)`) and synchronous keyboard/mouse input handling.
-- **Zero-Dependency Host Bridge**: Standalone vanilla ES module runtime (`dist/raylib-host.js`) supplying `"gl"`, `"raylib"`, `"audio"`, and `"wasi_snapshot_preview1"` namespaces to `WebAssembly.instantiate`.
+- **Modular & Standalone Host Bridge**: Modular ES package (`src/host/index.js`) delegating WASI Preview 1 hosting to [`wasi-host`](https://github.com/breeze833/wasi-host) (or an externally injected `wasiHost` / `wasiImports`), alongside a self-contained single-file browser/release bundle (`dist/raylib-host.js`) supplying `"gl"`, `"raylib"`, `"audio"`, `"wasi_snapshot_preview1"`, and `"wasi_unstable"` namespaces to `WebAssembly.instantiate`.
 - **Hardware-Decoupled Web Audio Subsystem**: Full Raylib audio API (`InitAudioDevice`, `Sound`, `Wave`, `Music`, `AudioStream`) implemented via `src/raudio_wasi.c` and Web Audio API (`AudioContext`). Because Web Audio runs on its own dedicated hardware thread, audio playback remains crystal-clear and immune to single-thread frame pacing fluctuations.
 - **Virtual Filesystem Ready (`dist/headers.js`)**: C headers (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`) are packaged as string constants for instant virtual filesystem mounting in in-browser IDEs (such as `wasm-c-ide`) without external network requests.
 - **Self-Contained GUI Support**: Includes `raygui.h` immediate-mode GUI widgets out of the box for building toolbars, buttons, sliders, and controls in pure C.
@@ -32,13 +32,14 @@
 | Browser Host (Main Thread & Web Worker, e.g. wasm-c-ide runtime.worker.js)   |
 |                                                                               |
 |  +-------------------------------------------------------------------------+  |
-|  | raylib-host.js (JavaScript Runtime Bridge)                              |  |
+|  | src/host/index.js  /  dist/raylib-host.js (JavaScript Runtime Bridge)    |  |
 |  | - WebGL ES 2.0 State Machine & Drawing Commands                         |  |
 |  | - SharedArrayBuffer Input State Sync (Keyboard bitset, Mouse X/Y)       |  |
 |  | - Frame Pacing (Atomics.wait frame delay for SetTargetFPS)              |  |
 |  | - Web Audio API Engine & Handles (createAudioImports / AudioReceiver)   |  |
 |  |   * Hardware-decoupled AudioContext & Gain/Pan/Voice nodes              |  |
 |  |   * PCM buffer decoding & streaming audio chunk queueing                |  |
+|  | - WASI Preview 1 Hosting (wasi-host or external wasiHost / wasiImports) |  |
 |  +------------------------------------+------------------------------------+  |
 +---------------------------------------|---------------------------------------+
                                         | (Wasm Imports: gl / raylib / wasi)
@@ -83,11 +84,15 @@
 │   │   ├── gl2.h              # Forwarding header to ../gl_wasi.h for zero-diff rlgl.h support
 │   │   └── gl2ext.h           # Forwarding header to ../gl_wasi.h
 │   └── host/
-│       ├── index.js           # Host bridge entry point
+│       ├── index.js           # Host bridge entry point (delegates WASI to wasi-host)
 │       ├── gl-context.js      # WebGL state machine and handle tables
 │       ├── input.js           # SharedArrayBuffer keyboard & mouse event synchronization
-│       ├── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
-│       └── wasi.js            # Standard WASI snapshot preview 1 runtime
+│       └── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
+├── scripts/
+│   ├── bundle-host.js         # Bundles src/host/*.js + wasi-host into dist/raylib-host.js
+│   ├── postinstall.js         # Downloads release assets when prebuilt dist/ files are absent
+│   ├── serve.js               # Local dev HTTP server with COOP/COEP headers
+│   └── setup-wasi-sdk.js      # Downloads and configures self-contained wasi-sdk v29
 ├── examples/
 │   ├── host-reference.js      # Production-grade reference runner with self-verification
 │   ├── core_basic_window.c    # Minimal window & text example
@@ -128,13 +133,15 @@ make toolchain
 ### Build Everything
 ```bash
 git submodule update --init --recursive
+npm install
 make all
 ```
 
-This compiles:
+This compiles and bundles:
 - `dist/lib/libraylib.a`
 - `dist/include/` (`raylib.h`, `raymath.h`, `rlgl.h`, `raygui.h`)
-- `dist/raylib-host.js`
+- `dist/headers.js`
+- `dist/raylib-host.js` (self-contained bundle incorporating `wasi-host`)
 
 ### Build Example Binaries
 ```bash
@@ -170,7 +177,7 @@ The authoritative Wasm host-assisted function specification and binary contract 
 ```bash
 make package
 ```
-Generates `dist/raylib-wasi.tar.gz` and `dist/raylib-wasi.zip`.
+Generates `dist/raylib-wasi.tar.gz`, `dist/raylib-wasi.zip`, and the npm package tarball `dist/raylib-wasi-5.5.0-build1.tgz`.
 
 ---
 
@@ -205,17 +212,21 @@ tar -xzf raylib-wasi.tar.gz
 
 ### Option 2: Web Applications & In-Browser IDE Integration (e.g. `wasm-c-ide`)
 
-For browser applications and in-browser IDEs:
-1. Download `raylib-wasi.tar.gz` from the GitHub Releases page into your web public assets directory.
-2. Import the host runtime bridge and virtual headers directly:
+For npm/Vite/bundler projects (such as `wasm-c-ide`), install the release tarball directly so `wasi-host` is shared and deduplicated across subsystems:
+
+```bash
+npm install https://github.com/breeze833/raylib-wasi/releases/download/latest/raylib-wasi-5.5.0-build1.tgz
+```
 
 ```javascript
-// Import the host bridge runtime
-import { createRaylibHost, RaylibReferenceHost, createMockGL, createGLImports, createAudioReceiver, InputCoordinator } from './dist/raylib-host.js';
+// Import from the modular package entrypoint (delegates WASI to shared wasi-host)
+import { createRaylibHost, RaylibReferenceHost, createMockGL, createGLImports, createAudioReceiver, InputCoordinator } from 'raylib-wasi';
 
 // Import C headers as string constants (e.g. for VFS mounting in browser IDEs)
-import { RAYLIB_H, RAYMATH_H, RLGL_H, RAYGUI_H } from './dist/headers.js';
+import { RAYLIB_H, RAYMATH_H, RLGL_H, RAYGUI_H } from 'raylib-wasi/headers';
 ```
+
+For zero-bundler static browser environments (direct `<script type="module">` or standalone Worker), use the pre-bundled single-file `./dist/raylib-host.js` and `./dist/headers.js` from `raylib-wasi.tar.gz` / GitHub Releases.
 
 #### Host Bridge Configuration Options
 ```javascript
@@ -224,6 +235,17 @@ const host = createRaylibHost({
   gl,                   // Optional pre-created WebGLRenderingContext
   sharedBuffer,         // 512-byte SharedArrayBuffer for zero-copy sync
   inputCoordinator,     // Optional: inject external coordinator (e.g. from canvas-wasi)
+  wasiHost,             // Optional: inject external WasiHost instance (e.g. shared OverlayVFS + stdin-wasi)
+  wasiImports,          // Optional: inject raw wasi_snapshot_preview1 syscall map (ignored if wasiHost is set)
+  vfs,                  // Optional VFS (OverlayVFS, Map, or object) when using built-in WasiHost fallback
+  cwd: '/',             // Optional working directory for built-in WasiHost fallback
+  argv: ['raylib'],     // Optional argv array for built-in WasiHost fallback
+  environ,              // Optional environment variables for built-in WasiHost fallback
+  preopens,             // Optional WASI preopens for built-in WasiHost fallback
+  stdin,                // Optional stdin source (string, Uint8Array, or stdin-wasi reader)
+  print: (line) => {},  // Line-buffered stdout callback for built-in WasiHost fallback
+  printErr: (line) => {}, // Line-buffered stderr callback for built-in WasiHost fallback
+  onExit: (code) => {}, // Exit callback invoked on proc_exit(code)
   onFrame: (bitmap) => {
     // Deliver ImageBitmap frame synchronously to main thread
   },
@@ -248,7 +270,7 @@ If you prefer building from source in your repository:
 
 ```bash
 git submodule add https://github.com/breeze833/raylib-wasi vendor/raylib-wasi
-cd vendor/raylib-wasi && make all
+cd vendor/raylib-wasi && npm install && make all
 ```
 
 ---

@@ -1,11 +1,78 @@
 // index.js - raylib-wasi Host Bridge entry point
 
+import { WasiHost, ProcExit } from 'wasi-host';
 import { createGLImports, createMockGL } from './gl-context.js';
 import { InputCoordinator } from './input.js';
-import { createWasiImports } from './wasi.js';
 import { createAudioImports, createAudioReceiver } from './audio-context.js';
 
-export { createGLImports, createMockGL, InputCoordinator, createWasiImports, createAudioImports, createAudioReceiver };
+export { createGLImports, createMockGL, InputCoordinator, createAudioImports, createAudioReceiver };
+
+const HAS_SAB = typeof SharedArrayBuffer !== 'undefined';
+
+function createLineBufferedLogger(printFn) {
+  let buffer = '';
+  return (text) => {
+    buffer += text;
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      printFn(line);
+    }
+  };
+}
+
+function wrapProcExit(wasiImports, onExit) {
+  if (!wasiImports || typeof wasiImports.proc_exit !== 'function') {
+    return wasiImports;
+  }
+  const origProcExit = wasiImports.proc_exit;
+  return new Proxy(wasiImports, {
+    get(target, prop) {
+      if (prop === 'proc_exit') {
+        return (code) => {
+          if (typeof onExit === 'function') onExit(code);
+          try {
+            origProcExit(code);
+          } catch (err) {
+            if (err && typeof err === 'object' && err.exitCode === undefined) {
+              err.exitCode = err.code !== undefined ? err.code : code;
+            }
+            throw err;
+          }
+          const exitErr = new ProcExit(code);
+          exitErr.exitCode = code;
+          throw exitErr;
+        };
+      }
+      return target[prop];
+    },
+  });
+}
+
+/**
+ * Creates a thin WASI Preview 1 compatibility import object backed by WasiHost.
+ * Prefer passing `wasiHost` directly to `createRaylibHost` or using `WasiHost` from `wasi-host`.
+ */
+export function createWasiImports(getMemory, options = {}) {
+  const printStdout = options.print || ((text) => console.log(text));
+  const printStderr = options.printErr || ((text) => console.error(text));
+
+  const host = new WasiHost({
+    vfs: options.vfs,
+    cwd: options.cwd || '/',
+    argv: options.argv || ['raylib'],
+    environ: options.environ,
+    preopens: options.preopens,
+    stdin: options.stdin,
+    stdout: options.stdout || createLineBufferedLogger(printStdout),
+    stderr: options.stderr || createLineBufferedLogger(printStderr),
+    getMemory,
+    onFileSync: options.onFileSync,
+    onFileDelete: options.onFileDelete,
+  });
+
+  return wrapProcExit(host.getImports(), options.onExit);
+}
 
 export function createRaylibHost(options = {}) {
   let memory = null;
@@ -21,7 +88,13 @@ export function createRaylibHost(options = {}) {
     const u8 = new Uint8Array(mem.buffer, ptr);
     let end = 0;
     while (u8[end] !== 0) end++;
-    return utf8Decoder.decode(new Uint8Array(mem.buffer, ptr, end));
+    const slice = u8.subarray(0, end);
+    if (HAS_SAB && mem.buffer instanceof SharedArrayBuffer) {
+      const unshared = new Uint8Array(end);
+      unshared.set(slice);
+      return utf8Decoder.decode(unshared);
+    }
+    return utf8Decoder.decode(slice);
   }
 
   // Initialize Canvas & WebGL Context
@@ -55,7 +128,37 @@ export function createRaylibHost(options = {}) {
   });
 
   const glImports = gl ? createGLImports(gl, getMemory) : {};
-  const wasiImports = createWasiImports(getMemory, options);
+
+  let wasiHost = options.wasiHost || null;
+  let wasiImports = null;
+  if (wasiHost) {
+    if (typeof wasiHost.setMemory === 'function') {
+      wasiHost.setMemory(getMemory);
+    }
+    wasiImports = typeof wasiHost.getImports === 'function'
+      ? wasiHost.getImports()
+      : wasiHost.createImportObject().wasi_snapshot_preview1;
+  } else if (options.wasiImports) {
+    wasiImports = options.wasiImports;
+  } else {
+    const printStdout = options.print || ((text) => console.log(text));
+    const printStderr = options.printErr || ((text) => console.error(text));
+    wasiHost = new WasiHost({
+      vfs: options.vfs,
+      cwd: options.cwd || '/',
+      argv: options.argv || ['raylib'],
+      environ: options.environ,
+      preopens: options.preopens,
+      stdin: options.stdin,
+      stdout: options.stdout || createLineBufferedLogger(printStdout),
+      stderr: options.stderr || createLineBufferedLogger(printStderr),
+      getMemory,
+      onFileSync: options.onFileSync,
+      onFileDelete: options.onFileDelete,
+    });
+    wasiImports = wrapProcExit(wasiHost.getImports(), options.onExit);
+  }
+
   const audioImports = createAudioImports(getMemory, options);
 
   let lastFpsTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -160,25 +263,42 @@ export function createRaylibHost(options = {}) {
   const host = {
     input,
     gl,
+    wasiHost,
     audio: audioImports,
     getImports: () => ({
       gl: glImports,
       raylib: combinedRaylibImports,
       audio: audioImports,
-      wasi_snapshot_preview1: wasiImports
+      wasi_snapshot_preview1: wasiImports,
+      wasi_unstable: wasiImports,
     }),
-    setMemory: (mem) => { memory = mem; },
+    setMemory: (mem) => {
+      memory = mem;
+      if (wasiHost && typeof wasiHost.setMemory === 'function') {
+        wasiHost.setMemory(getMemory);
+      }
+    },
     setInstance: (inst) => {
       memory = inst.exports.memory;
+      if (wasiHost && typeof wasiHost.setMemory === 'function') {
+        wasiHost.setMemory(getMemory);
+      }
     },
     run: async (wasmBinary) => {
       const imports = host.getImports();
       const { instance } = await WebAssembly.instantiate(wasmBinary, imports);
       host.setInstance(instance);
-      if (instance.exports._start) {
-        instance.exports._start();
-      } else if (instance.exports.main) {
-        instance.exports.main();
+      try {
+        if (instance.exports._start) {
+          instance.exports._start();
+        } else if (instance.exports.main) {
+          instance.exports.main();
+        }
+      } catch (err) {
+        if (err instanceof ProcExit || (err && typeof err.code === 'number')) {
+          err.exitCode = err.code;
+        }
+        throw err;
       }
       return instance;
     }
@@ -326,5 +446,4 @@ export class RaylibReferenceHost {
   }
 }
 
-export { RaylibReferenceHost };
 export default createRaylibHost;

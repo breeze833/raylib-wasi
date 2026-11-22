@@ -9,9 +9,10 @@ You are an autonomous senior systems, graphics, and WebAssembly engineer impleme
    - **NEVER** edit, patch, or modify files inside `vendor/raylib/`.
    - All platform customization must reside in `src/` (`rcore_wasi.c`, `gl_wasi.c`, `gl_wasi.h`, and `src/GLES2/`).
    - Upstream Raylib must remain 100% clean and directly trackable via Git submodules.
-3. **Zero-Dependency Host Bridge**:
-   - `raylib-host.js` must be pure vanilla ES module JavaScript. Do not introduce npm runtime dependencies or heavy bundler requirements.
-   - Designed for execution inside browser Web Workers (such as the xterm terminal emulator worker in `wasm-c-ide`), supporting `SharedArrayBuffer` for frame pacing and input synchronization.
+3. **Clean Modular Host Bridge & Standalone Bundle**:
+   - `src/host/` must remain lightweight vanilla ES module JavaScript delegating WASI Preview 1 hosting to [`wasi-host`](https://github.com/breeze833/wasi-host) (or an externally injected `wasiHost` / `wasiImports`), without heavy bundlers or framework dependencies.
+   - `scripts/bundle-host.js` builds the self-contained single-file `dist/raylib-host.js` (incorporating `wasi-host`) for standalone GitHub Releases and zero-bundler browser harnesses.
+   - Designed for execution inside browser Web Workers (such as the runtime worker in `wasm-c-ide`), supporting `SharedArrayBuffer` for frame pacing and input synchronization.
 4. **WASI Standard Compliance**:
    - Target standard `wasm32-wasi` (WASI Snapshot Preview 1).
    - Ensure object archives and headers are compatible with standard `wasm-ld` / LLVM toolchains and `wasi-libc`.
@@ -39,11 +40,15 @@ You are an autonomous senior systems, graphics, and WebAssembly engineer impleme
 │   │   ├── gl2.h              # Forwarding header to ../gl_wasi.h for zero-diff rlgl.h support
 │   │   └── gl2ext.h           # Forwarding header to ../gl_wasi.h
 │   └── host/
-│       ├── index.js           # raylib-host.js entry point (exports host bridge)
+│       ├── index.js           # Host bridge entry point (delegates WASI to wasi-host)
 │       ├── gl-context.js      # WebGL state machine and handle table (buffers, textures, shaders)
 │       ├── input.js           # SharedArrayBuffer keyboard & mouse event synchronization
-│       ├── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
-│       └── wasi.js            # WASI Snapshot Preview 1 minimal host runtime
+│       └── audio-context.js   # Web Audio API bridge, handle tables, and audio receiver
+├── scripts/
+│   ├── bundle-host.js         # Bundles src/host/*.js + wasi-host into dist/raylib-host.js
+│   ├── postinstall.js         # Downloads release assets when prebuilt dist/ files are absent
+│   ├── serve.js               # Local COOP/COEP dev HTTP server
+│   └── setup-wasi-sdk.js      # Self-contained wasi-sdk v29 installer
 ├── examples/
 │   ├── host-reference.js      # Production-grade reference runner with self-verification
 │   ├── core_basic_window.c    # Minimal window & text example
@@ -88,7 +93,7 @@ Proceed milestone-by-milestone:
 - Implement `input.js`:
   - Listen to canvas input events.
   - Encode key codes and mouse states into `SharedArrayBuffer` accessible synchronously by `rcore_wasi.c`.
-- Build standalone `dist/raylib-host.js` supplying namespaces `"gl"`, `"raylib"`, and `"wasi_snapshot_preview1"`.
+- Build modular host bridge (`src/host/index.js`) and standalone `dist/raylib-host.js` supplying namespaces `"gl"`, `"raylib"`, `"audio"`, `"wasi_snapshot_preview1"`, and `"wasi_unstable"`.
 
 ### Milestone 3: Toolchain Compilation (`Makefile`)
 - Configure `Makefile` invoking `clang --target=wasm32-wasi -O2`:
@@ -111,11 +116,11 @@ Proceed milestone-by-milestone:
 
 ### Milestone 5: CI/CD & Automated Packaging
 - Create `.github/workflows/build.yml`:
-  - Installs `wasi-sdk` / LLVM / `lld` / `wasi-libc`.
-  - Builds `libraylib.a` and `raylib-host.js`.
-  - Runs symbol and host tests.
-  - Packages and publishes `raylib-wasi.tar.gz` and `raylib-wasi.zip` on **GitHub Releases**.
-- **Distribution Policy**: Distributions are published exclusively via the repository Release page. No GitHub Packages or npm registry publishing is maintained.
+  - Installs `wasi-sdk` / LLVM / `lld` / `wasi-libc` and runs `npm install` (fetching `wasi-host`).
+  - Builds `libraylib.a` and `dist/raylib-host.js`.
+  - Runs symbol and host tests (`npm test`).
+  - Packages and publishes `raylib-wasi.tar.gz`, `raylib-wasi.zip`, and `raylib-wasi-5.5.0-build1.tgz` on **GitHub Releases**.
+- **Distribution Policy**: Distributions are published exclusively via the repository Release page (not published to the public npmjs registry).
 
 ### Milestone 6: Web Audio Subsystem Integration
 - Implement `src/raudio_wasi.c`:
@@ -135,6 +140,12 @@ Proceed milestone-by-milestone:
   - Implements integrated self-verification executing all example binaries and verifying assertions.
 - Integrate reference runner into `npm test` and `make test`.
 
+### Milestone 8: WASI Host Delegation (`wasi-host`) & Package Modularization (`5.5.0-build1`)
+- Remove the duplicate `src/host/wasi.js` stub and delegate WASI Preview 1 hosting to [`wasi-host`](https://github.com/breeze833/wasi-host).
+- Expose `src/host/index.js` as `.` and `./host` entrypoints in `package.json` with `wasi-host` as a runtime dependency (`5.5.0-build1`) so bundler consumers deduplicate `wasi-host`.
+- Support external `wasiHost` and `wasiImports` injection in `createRaylibHost(options)` alongside `options.vfs`, `options.stdin`, `options.cwd`, `options.argv`, `options.environ`, `options.preopens`, `options.onExit`, `options.onFileSync`, and `options.onFileDelete`.
+- Preserve standalone single-file `dist/raylib-host.js` via `scripts/bundle-host.js` (incorporating `wasi-host` sources cleanly).
+
 ---
 
 ## 4. Verification & Testing Checklist
@@ -151,4 +162,4 @@ Before marking any task complete:
 | **Web Audio Playback** | `InitAudioDevice()`, `LoadSoundFromWave()`, and `PlaySound()` trigger audible Web Audio playback without thread blocking or frame jitter. |
 | **Standalone Dist Size** | `libraylib.a` is stripped of debug bloat, keeping artifact compact for web IDE consumption. |
 | **Host Reference Verification** | `node examples/host-reference.js` verifies all examples in pure Node.js with zero contract violations. |
-| **Release Packaging** | `make package` produces `dist/raylib-wasi.tar.gz` containing `include/`, `lib/libraylib.a`, and `raylib-host.js` for GitHub Releases. |
+| **Release Packaging** | `make package` produces `dist/raylib-wasi.tar.gz`, `dist/raylib-wasi.zip`, and `dist/raylib-wasi-5.5.0-build1.tgz` for GitHub Releases. |
