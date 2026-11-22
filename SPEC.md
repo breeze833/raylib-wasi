@@ -177,7 +177,7 @@ An ES module host bridge focused on Raylib's graphics, input, and Web Audio subs
 - **Archiver**: `llvm-ar rcs dist/lib/libraylib.a ...`
 - **Package Version & Dependencies**:
   - Package version: `5.5.0-build1` (upstream Raylib `5.5`, packaged as `raylib-wasi-5.5.0-build1.tgz`).
-  - Runtime npm dependency: `"wasi-host"` (`https://github.com/breeze833/wasi-host/releases/download/latest/wasi-host-0.1.0.tgz`).
+  - Runtime npm dependency: `"wasi-host"` (`https://github.com/breeze833/wasi-host/releases/download/v0.1.1/wasi-host-0.1.1.tgz`).
   - CI (`.github/workflows/build.yml`) runs `npm install` before `make all`, `make examples`, `make test`, and `make package`.
 - **Zero-Binary & Generated Headers Distribution Policy**:
   - `libraylib.a` is compiled in GitHub Actions CI and released as downloadable release assets on GitHub Releases (`raylib-wasi.tar.gz`), ensuring zero binary Wasm files are committed to the Git repository.
